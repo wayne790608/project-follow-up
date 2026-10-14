@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>人員與單位管理 - 專案管理系統</title>
+    <link rel="stylesheet" href="assets/common.css">
+    <style>
+        .user-table { width: 100%; border-collapse: collapse; font-size: 13.5px; text-align: left; min-width: 900px; }
+        .user-table th { background: #f8fafc; color: var(--c-muted); font-weight: 700; padding: 12px 16px; border-bottom: 1px solid var(--c-border); }
+        .user-table td { padding: 12px 16px; border-bottom: 1px solid #edf2f7; }
+        .type-internal { background: #ebf8ff; color: var(--c-primary-dark); }
+        .type-vendor { background: #fefcbf; color: #744210; }
+        .user-table a { color: var(--c-primary-dark); text-decoration: none; }
+        th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+        th.sortable:hover { color: var(--c-primary-dark); background: #ebf8ff; }
+        th.sortable::after { content: '⇅'; margin-left: 5px; color: #cbd5e0; font-size: 11px; }
+        th.sortable.asc::after { content: '▲ A→Z'; color: var(--c-primary); }
+        th.sortable.desc::after { content: '▼ Z→A'; color: var(--c-primary); }
+        th.sortable.asc, th.sortable.desc { color: var(--c-primary-dark); }
+    </style>
+</head>
+<body>
+    <aside class="sidebar" id="sidebar"></aside>
+
+    <main class="main-wrapper">
+        <div class="top-navbar">
+            <div class="nav-title">人員與單位管理</div>
+            <div class="nav-actions edit-only">
+                <button class="btn btn-outline" onclick="PM.csvTemplate(userCsvSpec())" title="下載空白 CSV 問卷表格，可用 Excel 填寫後匯入">📄 輸出問卷表格</button>
+                <button class="btn btn-outline green" onclick="PM.csvImport(userCsvSpec())" title="匯入填好的 CSV 問卷表格">📥 匯入 CSV</button>
+                <button class="btn btn-primary" onclick="openUserModal()">＋ 新增人員</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="toolbar">
+                <div class="toolbar-inline">
+                    <input type="text" id="userSearch" class="search-box" placeholder="🔍 搜尋人員名稱、單位、Email 或備註..." oninput="renderUsers()">
+                    <select id="fCategory" class="filter-select" onchange="renderUsers()">
+                        <option value="">全部類別</option><option value="內部單位">內部單位</option><option value="外部廠商">外部廠商</option>
+                    </select>
+                    <select id="fFactory" class="filter-select" onchange="renderUsers()"></select>
+                </div>
+                <div class="toolbar-inline">
+                    <span class="muted" id="countLabel"></span>
+                    
+                </div>
+            </div>
+            <div class="table-scroll">
+                <table class="user-table">
+                    <thead><tr>
+                        <th style="width:110px;" class="sortable" data-sort="category">類別</th><th style="width:170px;" class="sortable" data-sort="dept">單位 / 組織</th>
+                        <th style="width:130px;" class="sortable" data-sort="name">人員名稱</th>
+                        <th style="width:200px;">Email</th><th style="width:120px;" class="sortable" data-sort="factory">常駐廠區</th><th>備註說明</th><th style="width:120px;">操作</th>
+                    </tr></thead>
+                    <tbody id="userTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <div class="modal-overlay" id="userModal">
+        <div class="modal-box">
+            <div class="modal-title" id="userModalTitle">＋ 新增人員資料</div>
+            <input type="hidden" id="userId">
+            <div class="form-grid-2">
+                <div class="form-group"><label>身份類別 <span class="req">*</span></label>
+                    <select id="userCategory"><option value="內部單位">內部單位</option><option value="外部廠商">外部廠商</option></select></div>
+                <div class="form-group" id="factoryGroup"><label>常駐廠區 <span class="req">*</span></label><select id="userFactory"></select></div>
+            </div>
+            <div class="form-group"><label>所屬單位 / 廠商名稱 <span class="req">*</span></label><input type="text" id="userDept" placeholder="例如：底加工／倉庫主管 或 仙工智能"></div>
+            <div class="form-group"><label>人員姓名 <span class="req">*</span></label><input type="text" id="userName" placeholder="例如：Sam 或 李工程師"></div>
+            <div class="form-group"><label>電子信箱 (Email) <span class="req">*</span></label><input type="email" id="userEmail" placeholder="sam@company.com"></div>
+            <div class="form-group"><label>備註事項</label><input type="text" id="userNote" placeholder="例如：負責 AGV 聯調與硬體驗收對接"></div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" onclick="PM.closeModal('userModal')">取消</button>
+                <button type="button" class="btn btn-primary" onclick="saveUserData()">儲存</button>
+            </div>
+        </div>
+    </div>
+
+<script src="assets/vendor/supabase.js"></script>
+<script src="assets/config.js"></script>
+<script src="assets/offline-db.js"></script>
+<script src="assets/common.js"></script>
+<script src="assets/csv-import.js"></script>
+<script>
+    const esc = PM.esc;
+    const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const VENDOR = '外部廠商';
+
+    /* ---------- 欄位排序：點表頭切換 A→Z / Z→A / 取消 ---------- */
+    let sortKey = null, sortDir = 1;
+    try { const sv = JSON.parse(localStorage.getItem('pm_users_sort') || 'null'); if (sv) { sortKey = sv.k; sortDir = sv.d; } } catch (e) {}
+    const collator = new Intl.Collator(['zh-Hant', 'en'], { numeric: true, sensitivity: 'base' });
+    function sortUsers(list) {
+        if (!sortKey) return list;
+        return list.slice().sort((a, b) => {
+            const x = (a[sortKey] || '').trim(), y = (b[sortKey] || '').trim();
+            if (!x && !y) return 0;
+            if (!x) return 1;                  // 空白永遠排最後
+            if (!y) return -1;
+            // 英文／數字開頭排在中文前面（A→Z），中文依筆畫排序
+            const gx = /^[A-Za-z0-9]/.test(x) ? 0 : 1, gy = /^[A-Za-z0-9]/.test(y) ? 0 : 1;
+            return ((gx - gy) || collator.compare(x, y)) * sortDir || collator.compare(a.name || '', b.name || '');
+        });
+    }
+    document.querySelectorAll('th.sortable').forEach(th => th.onclick = () => {
+        const k = th.dataset.sort;
+        if (sortKey !== k) { sortKey = k; sortDir = 1; }
+        else if (sortDir === 1) sortDir = -1;
+        else { sortKey = null; sortDir = 1; }
+        try { localStorage.setItem('pm_users_sort', JSON.stringify(sortKey ? { k: sortKey, d: sortDir } : null)); } catch (e) {}
+        renderUsers();
+    });
+    function renderSortHeaders() {
+        document.querySelectorAll('th.sortable').forEach(th => {
+            th.classList.toggle('asc', th.dataset.sort === sortKey && sortDir === 1);
+            th.classList.toggle('desc', th.dataset.sort === sortKey && sortDir === -1);
+            th.title = th.dataset.sort === sortKey ? (sortDir === 1 ? '目前 A→Z，再點一下改為 Z→A' : '目前 Z→A，再點一下取消排序') : '點擊依此欄排序 A→Z';
+        });
+    }
+
+    function renderUsers() {
+        const q = document.getElementById('userSearch').value.trim().toLowerCase();
+        const fc = document.getElementById('fCategory').value;
+        const ff = document.getElementById('fFactory').value;
+        const all = PM.getUsers();
+        const list = sortUsers(all.filter(u => [u.name, u.dept, u.email, u.note].some(v => String(v || '').toLowerCase().includes(q)) &&
+            (!fc || u.category === fc) && (!ff || (u.category !== VENDOR && u.factory === ff))));
+        renderSortHeaders();
+        document.getElementById('countLabel').textContent = `共 ${list.length} / ${all.length} 人`;
+        document.getElementById('userTableBody').innerHTML = list.length ? list.map(u => `
+            <tr>
+                <td><span class="badge ${u.category === '內部單位' ? 'type-internal' : 'type-vendor'}">${esc(u.category)}</span></td>
+                <td><strong>${esc(u.dept)}</strong></td>
+                <td>${esc(u.name)}</td>
+                <td>${u.email ? `<a href="mailto:${esc(u.email)}">${esc(u.email)}</a>` : '-'}</td>
+                <td>${u.category === VENDOR ? '<span class="muted">—</span>' : esc(u.factory || '-')}</td>
+                <td class="muted" style="font-size:12.5px;">${esc(u.note || '-')}</td>
+                <td>
+                    <button class="btn-action edit-only" onclick="editUser('${esc(u.id)}')">編輯</button>
+                    <button class="btn-action del edit-only" onclick="deleteUser('${esc(u.id)}')">刪除</button>
+                </td>
+            </tr>`).join('') : `<tr><td colspan="7" class="empty">${all.length ? '查無符合條件的人員' : '名冊目前是空的，請點右上角「＋ 新增人員」'}</td></tr>`;
+    }
+
+    // 外部廠商不需要填常駐廠區
+    function syncFactoryField() {
+        const vendor = document.getElementById('userCategory').value === VENDOR;
+        document.getElementById('factoryGroup').style.display = vendor ? 'none' : '';
+    }
+    document.getElementById('userCategory').addEventListener('change', syncFactoryField);
+
+    function openUserModal() {
+        document.getElementById('userId').value = '';
+        document.getElementById('userModalTitle').textContent = '＋ 新增人員資料';
+        document.getElementById('userCategory').value = document.getElementById('fCategory').value || '內部單位';
+        PM.fillSelect('userFactory', PM.getDicts().factories, document.getElementById('fFactory').value || PM.getDicts().factories[0]);
+        ['userDept', 'userName', 'userEmail', 'userNote'].forEach(id => document.getElementById(id).value = '');
+        syncFactoryField();
+        PM.openModal('userModal');
+    }
+
+    function editUser(id) {
+        const u = PM.getUsers().find(x => x.id === id);
+        if (!u) return;
+        document.getElementById('userId').value = u.id;
+        document.getElementById('userModalTitle').textContent = '✏️ 編輯人員資料';
+        document.getElementById('userCategory').value = u.category;
+        PM.fillSelect('userFactory', PM.getDicts().factories, u.factory || PM.getDicts().factories[0]);
+        document.getElementById('userDept').value = u.dept;
+        document.getElementById('userName').value = u.name;
+        document.getElementById('userEmail').value = u.email || '';
+        document.getElementById('userNote').value = u.note || '';
+        syncFactoryField();
+        PM.openModal('userModal');
+    }
+
+    async function saveUserData() {
+        const v = id => document.getElementById(id).value.trim();
+        const category = v('userCategory');
+        const data = { id: v('userId') || null, category, dept: v('userDept'), name: v('userName'),
+            email: v('userEmail').toLowerCase(), factory: category === VENDOR ? null : v('userFactory'), note: v('userNote') };
+        if (!data.name || !data.dept || !data.email) { alert('請填寫人員姓名、單位與 Email！'); return; }
+        if (!EMAIL_RE.test(data.email)) { alert('Email 格式不正確！'); return; }
+        if (category !== VENDOR && !data.factory) { alert('請選擇常駐廠區！'); return; }
+        if (PM.getUsers().some(u => u.id !== data.id && (u.email || '').toLowerCase() === data.email)) { alert('此 Email 已存在於名冊中！'); return; }
+        const ok = await PM.act(() => PM.api.savePerson(data), '人員資料已儲存');
+        if (ok) { PM.closeModal('userModal'); renderUsers(); }
+    }
+
+    async function deleteUser(id) {
+        const u = PM.getUsers().find(x => x.id === id);
+        if (!u || !confirm(`確定刪除「${u.name}（${u.dept}）」的人員資料？`)) return;
+        await PM.act(() => PM.api.deletePerson(id), '已刪除');
+        renderUsers();
+    }
+
+    /* ================= CSV 問卷表格匯入：人員名冊 ================= */
+    function userCsvSpec() {
+        const d = PM.getDicts();
+        return {
+            name: '人員與單位', title: '人員與單位名冊',
+            columns: [
+                { key: 'category', label: '類別', required: true, hint: '可填：內部單位／外部廠商', aliases: ['身份類別', '身分類別'] },
+                { key: 'dept', label: '單位或廠商名稱', required: true, hint: '例：底加工／倉庫主管、仙工智能', aliases: ['單位/組織', '單位組織', '所屬單位', '單位/廠商名稱', '單位'] },
+                { key: 'name', label: '人員姓名', required: true, aliases: ['姓名', '人員名稱'] },
+                { key: 'email', label: 'Email', required: true, aliases: ['電子信箱', '電子郵件', 'e-mail'] },
+                { key: 'factory', label: '常駐廠區', hint: '內部單位必填，可填：' + d.factories.join('／') + '；外部廠商免填', aliases: ['廠區'] },
+                { key: 'note', label: '備註說明', aliases: ['備註', '備註事項'] }
+            ],
+            prepare(rows, ctx) {
+                const existing = new Map(PM.getUsers().map(u => [(u.email || '').toLowerCase(), u]));
+                const seen = new Map();
+                return rows.map(r => {
+                    const it = { line: r.__line, title: r.name ? `${r.name}${r.dept ? '（' + r.dept + '）' : ''}` : '（未填姓名）', errors: [], warnings: [], dictAdds: [] };
+                    ['category', 'dept', 'name', 'email'].forEach(k => { if (!r[k]) it.errors.push(`「${this.columns.find(c => c.key === k).label}」未填`); });
+                    const category = PM.csvVal.pick(r.category, ['內部單位', '外部廠商'], { '內部': '內部單位', '外部': '外部廠商', '廠商': '外部廠商', '供應商': '外部廠商' });
+                    if (r.category && category === null) it.errors.push(`類別「${r.category}」無效，請填「內部單位」或「外部廠商」`);
+                    const email = r.email.toLowerCase();
+                    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) it.errors.push(`Email「${r.email}」格式不正確`);
+                    else if (email && existing.has(email)) it.errors.push(`Email 已存在於名冊（${existing.get(email).name}），略過`);
+                    else if (email && seen.has(email)) it.errors.push(`與第 ${seen.get(email)} 列的 Email 重複`);
+                    if (email) seen.set(email, r.__line);
+                    let factory = null;
+                    if (category === '外部廠商') { if (r.factory) it.warnings.push('外部廠商不需要常駐廠區，將忽略此欄'); }
+                    else if (category === '內部單位') {
+                        if (!r.factory) it.errors.push('內部單位需填「常駐廠區」');
+                        else factory = ctx.dict('factories', r.factory, '常駐廠區', it);
+                    }
+                    it.sub = [category || r.category, email, factory].filter(Boolean).join('｜');
+                    it.data = { category, dept: r.dept, name: r.name, email, factory, note: r.note };
+                    return it;
+                });
+            },
+            async commit(items, progress) {
+                let n = 0;
+                for (const it of items) { await PM.api.savePerson(Object.assign({ id: null }, it.data)); progress(++n, items.length); }
+            },
+            okMsg: n => `已匯入 ${n} 位人員`,
+            onDone() { renderUsers(); }
+        };
+    }
+
+    PM.boot('users_dept', () => {
+        PM.fillSelect('fFactory', PM.getDicts().factories, '', '全部廠區（內部人員）');
+        renderUsers();
+    });
+</script>
+</body>
+</html>

@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>項目需求評估 - 專案管理系統</title>
+    <link rel="stylesheet" href="assets/common.css">
+    <style>
+        .main-wrapper { display: flex; flex-direction: column; }
+        .type-tabs-container { display: flex; gap: 10px; margin-bottom: 18px; background: #fff; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--c-border); flex-wrap: wrap; align-items: center; }
+        .type-tab-btn { background: #f8fafc; border: 1px solid #cbd5e0; padding: 8px 14px; border-radius: 8px; font-size: 13.5px; font-weight: 700; cursor: pointer; color: #4a5568; display: flex; align-items: center; gap: 8px; font-family: inherit; }
+        .type-tab-btn:hover { background: #edf2f7; }
+        .type-tab-btn.active { background: #ebf8ff; border-color: var(--c-primary); color: var(--c-primary-dark); }
+        .tab-badge { background: #cbd5e0; color: #2d3748; padding: 2px 7px; border-radius: 12px; font-size: 11px; }
+        .type-tab-btn.active .tab-badge { background: var(--c-primary); color: #fff; }
+        .tabs-right { margin-left: auto; display: flex; gap: 8px; }
+
+        .split-layout { display: grid; grid-template-columns: 360px 1fr; gap: 20px; flex-grow: 1; min-height: 520px; }
+        .case-list-pane { background: #fff; border-radius: 10px; border: 1px solid var(--c-border); display: flex; flex-direction: column; overflow: hidden; }
+        .pane-header { padding: 14px 16px; background: #f8fafc; border-bottom: 1px solid #edf2f7; font-size: 14px; font-weight: 700; color: #4a5568; display: flex; justify-content: space-between; align-items: center; }
+        .case-cards-scroll { flex-grow: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+        .case-card-item { padding: 14px; border-radius: 8px; border: 1px solid var(--c-border); background: #fff; cursor: pointer; transition: all .2s; }
+        .case-card-item:hover { border-color: #90cdf4; }
+        .case-card-item.active { border-color: var(--c-primary); background: #f0f7ff; box-shadow: 0 2px 8px rgba(49,130,206,.12); }
+        .case-card-title { font-size: 14.5px; font-weight: 700; color: #1a365d; margin-bottom: 6px; }
+        .case-card-meta { font-size: 12px; color: var(--c-muted); line-height: 1.6; }
+
+        .case-detail-pane { background: #fff; border-radius: 10px; border: 1px solid var(--c-border); padding: 24px; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; }
+        .detail-top-box { border-bottom: 1px solid #edf2f7; padding-bottom: 18px; }
+        .detail-case-title { font-size: 20px; font-weight: 700; color: #1a202c; margin-bottom: 8px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .detail-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+        .detail-meta-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; background: #f8fafc; padding: 12px 16px; border-radius: 8px; font-size: 13px; margin-top: 12px; }
+        .req-section-title { font-size: 14px; font-weight: 700; color: var(--c-primary-dark); margin-bottom: 8px; }
+        .req-desc-card { background: #fafafa; border-left: 4px solid var(--c-primary); padding: 12px 16px; border-radius: 0 6px 6px 0; font-size: 13.5px; line-height: 1.6; color: #4a5568; margin-bottom: 15px; white-space: pre-wrap; }
+        .linked-box { background: #faf5ff; border: 1px solid #e9d8fd; padding: 10px 14px; border-radius: 6px; font-size: 13px; color: #553c9e; }
+        .linked-box a { color: #553c9e; font-weight: 700; }
+
+        .discussions-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+        .btn-add-disc { background: #ebf8ff; color: var(--c-primary-dark); border: 1px dashed #63b3ed; padding: 6px 14px; border-radius: 6px; font-size: 12.5px; font-weight: 700; cursor: pointer; font-family: inherit; }
+        .btn-add-disc:hover { background: #bee3f8; }
+        .disc-list { display: flex; flex-direction: column; gap: 12px; }
+        .disc-item { border: 1px solid var(--c-border); border-radius: 8px; padding: 12px 16px; background: #fff; }
+        .disc-meta { display: flex; justify-content: space-between; font-size: 12px; color: var(--c-muted); margin-bottom: 6px; gap: 10px; flex-wrap: wrap; align-items: center; }
+        .disc-text { font-size: 13px; line-height: 1.5; color: #2d3748; white-space: pre-wrap; }
+
+        .type-selector-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 8px; margin-bottom: 16px; }
+        .type-select-btn { border: 2px solid var(--c-border); background: #f8fafc; padding: 10px 6px; border-radius: 8px; cursor: pointer; text-align: center; font-size: 13px; font-weight: 700; color: #4a5568; }
+        .type-select-btn:hover { border-color: #90cdf4; }
+        .type-select-btn.selected { border-color: var(--c-primary); background: #ebf8ff; color: var(--c-primary-dark); }
+
+        @media (max-width: 1000px) { .split-layout { grid-template-columns: 1fr; } .detail-meta-grid { grid-template-columns: 1fr 1fr; } }
+    </style>
+</head>
+<body>
+    <aside class="sidebar" id="sidebar"></aside>
+
+    <main class="main-wrapper">
+        <div class="top-navbar">
+            <div class="nav-title">項目需求評估與討論追蹤</div>
+            <div class="nav-actions edit-only">
+                <button class="btn btn-outline" onclick="PM.csvTemplate(reqCsvSpec())" title="下載空白 CSV 問卷表格，可用 Excel 填寫後匯入">📄 輸出問卷表格</button>
+                <button class="btn btn-outline green" onclick="PM.csvImport(reqCsvSpec())" title="匯入填好的 CSV 問卷表格">📥 匯入 CSV</button>
+                <button class="btn btn-primary" onclick="openCreateModal()">＋ 新增需求評估</button>
+            </div>
+        </div>
+
+        <div class="type-tabs-container">
+            <div id="typeTabs" style="display:contents"></div>
+            <div class="tabs-right">
+                <select id="fFactory" class="filter-select" onchange="renderCaseList()"></select>
+                <select id="fScope" class="filter-select" onchange="refresh()"></select>
+                <select id="fStatus" class="filter-select" onchange="renderCaseList()"></select>
+            </div>
+        </div>
+
+        <div class="split-layout">
+            <div class="case-list-pane">
+                <div class="pane-header"><span id="currentCategoryTitle"></span><span class="muted" id="caseListCount"></span></div>
+                <div class="case-cards-scroll" id="caseCardsContainer"></div>
+            </div>
+            <div class="case-detail-pane" id="caseDetailPane"></div>
+        </div>
+    </main>
+
+    <!-- Modal：新增 / 編輯需求評估案件 -->
+    <div class="modal-overlay" id="createReqModal">
+        <div class="modal-box" style="width:640px;">
+            <div class="modal-title" id="reqModalTitle">＋ 建立新項目需求評估</div>
+            <input type="hidden" id="editReqId">
+            <label style="font-size:12.5px;font-weight:700;color:#4a5568;margin-bottom:6px;display:block;">項目類型 <span class="req">*</span></label>
+            <div class="type-selector-grid" id="typeSelector"></div>
+            <input type="hidden" id="modalSelectedType">
+
+            <div class="form-group"><label>案件名稱 <span class="req">*</span></label><input type="text" id="newReqTitle" placeholder="例如：東莞廠成型線戶外地牛配送台數評估"></div>
+            <div class="form-grid-2">
+                <div class="form-group"><label>所屬廠區 <span class="req">*</span></label><select id="newReqFactory"></select></div>
+                <div class="form-group"><label>使用單位 (需求單位) <span class="req">*</span></label><input type="text" id="newReqDept" placeholder="例如：底加工／總工務處"></div>
+            </div>
+            <div class="form-grid-2">
+                <div class="form-group"><label>提出人員 <span class="req">*</span></label><input type="text" id="newReqUser" list="peopleList" placeholder="例如：Sam (倉庫主管)"></div>
+                <div class="form-group"><label>評估階段狀態 <span class="req">*</span></label><select id="newReqStatus"></select></div>
+            </div>
+            <div class="form-group"><label>實際需求與現場痛點描述 <span class="req">*</span></label><textarea id="newReqDesc" rows="3" placeholder="請詳細描述目前作業現況、遇到的問題與具體改善需求..."></textarea></div>
+            <div class="form-group"><label>預期目標效益</label><input type="text" id="newReqTarget" placeholder="例如：節省單趟 10 分鐘搬運時間、成型線不缺料斷線"></div>
+            <div class="form-group" id="initDiscGroup" style="background:#f8fafc;padding:12px;border-radius:6px;border:1px solid var(--c-border);">
+                <label style="color:var(--c-primary-dark);">📝 第一筆討論紀錄（選填）</label>
+                <input type="text" id="newReqInitDisc" placeholder="填寫本次初次溝通結論、與會人員等...">
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" onclick="PM.closeModal('createReqModal')">取消</button>
+                <button type="button" class="btn btn-primary" id="btnSubmitReq" onclick="submitRequirement()">確認建立需求</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal：新增討論紀錄 -->
+    <div class="modal-overlay" id="addDiscModal">
+        <div class="modal-box">
+            <div class="modal-title" id="discModalTitle">💬 新增需求討論紀錄</div>
+            <input type="hidden" id="currentCaseIdForDisc"><input type="hidden" id="editDiscId">
+            <div class="form-grid-2">
+                <div class="form-group"><label>討論日期 <span class="req">*</span></label><input type="date" id="discDate"></div>
+                <div class="form-group"><label>討論模式 / 類別 <span class="req">*</span></label><select id="discType"></select></div>
+            </div>
+            <div class="form-group"><label>內部與會人員 (單位/姓名)</label><div id="discInternal"></div></div>
+            <div class="form-group"><label>外部廠商人員 (廠商/姓名)</label><div id="discExternal"></div></div>
+            <div class="form-group"><label>討論內容與追蹤事項 <span class="req">*</span></label><textarea id="discContent" rows="3" placeholder="請填寫本次討論的主要決議、規格確認或待辦事項..."></textarea></div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" onclick="PM.closeModal('addDiscModal')">取消</button>
+                <button type="button" class="btn btn-primary" onclick="submitNewDiscussion()">儲存紀錄</button>
+            </div>
+        </div>
+    </div>
+
+<script src="assets/vendor/supabase.js"></script>
+<script src="assets/config.js"></script>
+<script src="assets/offline-db.js"></script>
+<script src="assets/common.js"></script>
+<script src="assets/csv-import.js"></script>
+<script>
+    const esc = PM.esc;
+    const TYPE_ICONS = { 'AMR搬運': '🤖', '手臂': '🦾', '系統': '💻', '設備改造': '🔧', '影像辨識': '👁️' };
+    const icon = t => TYPE_ICONS[t] || '🏷️';
+    let currentCategory = null;
+    let currentSelectedCaseId = PM.param('id');
+
+    // 依「我的／分享給我的」範圍篩選
+    function scopedReqs() {
+        const scope = document.getElementById('fScope').value;
+        return PM.getRequirements().filter(r => !scope ? (r.isMine || PM.isSharedToMe(r)) : PM.scopeOf(r) === scope);
+    }
+
+    function renderTabs() {
+        const list = scopedReqs();
+        const types = PM.getDicts().projTypes.slice();
+        list.forEach(r => { if (!types.includes(r.type)) types.push(r.type); });
+        if (!currentCategory || !types.includes(currentCategory)) currentCategory = types[0];
+        document.getElementById('typeTabs').innerHTML = types.map(t => `
+            <button class="type-tab-btn ${t === currentCategory ? 'active' : ''}" data-type="${esc(t)}">
+                ${icon(t)} ${esc(t)} <span class="tab-badge">${list.filter(r => r.type === t).length}</span></button>`).join('');
+        document.querySelectorAll('#typeTabs .type-tab-btn').forEach(b => b.onclick = () => { currentCategory = b.dataset.type; renderTabs(); renderCaseList(); });
+    }
+
+    function renderCaseList() {
+        const ff = document.getElementById('fFactory').value;
+        const fs = document.getElementById('fStatus').value;
+        const list = scopedReqs().filter(r => r.type === currentCategory && (!ff || r.factory === ff) && (!fs || r.status === fs));
+        const container = document.getElementById('caseCardsContainer');
+        document.getElementById('currentCategoryTitle').textContent = `${currentCategory} 案件列表`;
+        document.getElementById('caseListCount').textContent = `${list.length} 個案件`;
+
+        if (!list.length) {
+            container.innerHTML = `<div class="empty">目前在「${esc(currentCategory)}」尚無符合條件的評估案件<br><br><button class="btn-add-disc edit-only" onclick="openCreateModal()">＋ 立即新增</button></div>`;
+            renderCaseDetail(null);
+            return;
+        }
+        if (!currentSelectedCaseId || !list.some(x => x.id === currentSelectedCaseId)) currentSelectedCaseId = list[0].id;
+
+        container.innerHTML = list.map(c => `
+            <div class="case-card-item ${c.id === currentSelectedCaseId ? 'active' : ''}" data-id="${esc(c.id)}">
+                <div class="case-card-title">${esc(c.title)}</div>
+                <div class="case-card-meta"><span class="badge-factory">${esc(c.factory)}</span> ${PM.statusBadge(c.status)} ${PM.ownerBadge(c)}</div>
+                <div class="case-card-meta" style="margin-top:4px;">單位：${esc(c.dept)}｜提報：${esc(c.user)}</div>
+                <div style="font-size:11.5px;color:var(--c-primary);font-weight:600;margin-top:6px;">💬 討論紀錄：${c.discussions.length} 則</div>
+            </div>`).join('');
+        container.querySelectorAll('.case-card-item').forEach(el => el.onclick = () => { currentSelectedCaseId = el.dataset.id; renderCaseList(); });
+        renderCaseDetail(list.find(x => x.id === currentSelectedCaseId));
+    }
+
+    function renderCaseDetail(c) {
+        const pane = document.getElementById('caseDetailPane');
+        if (!c) { pane.innerHTML = `<div class="empty" style="padding:60px">請從左側點選要查看的需求案件</div>`; return; }
+
+        const linked = c.linkedProjectId ? PM.getProject(c.linkedProjectId) : null;
+        const own = PM.isOwner(c);
+        const discHtml = c.discussions.length ? c.discussions.map(d => `
+            <div class="disc-item">
+                <div class="disc-meta">
+                    <div>${PM.recTag(d.type)} <strong class="mono" style="margin-left:8px;">${esc(d.date)}</strong></div>
+                    <div>內部：${esc(d.internal || '-')}｜廠商：${esc(d.external || '-')}｜${PM.authorLine(d)}
+                        ${PM.isAuthor(d) ? `<span class="entry-actions"><button class="btn-mini" title="修改" onclick="openDiscModal('${esc(c.id)}','${esc(d.id)}')">✎</button><button class="btn-mini del" title="刪除" onclick="deleteDiscussion('${esc(d.id)}')">×</button></span>` : ''}</div>
+                </div>
+                <div class="disc-text">${esc(d.content)}</div>
+            </div>`).join('') : `<div class="empty" style="padding:20px">目前尚無討論紀錄</div>`;
+
+        pane.innerHTML = `
+            <div class="detail-top-box">
+                <div class="detail-case-title"><span>${esc(c.title)}</span>${PM.statusBadge(c.status)}${PM.ownerBadge(c)}</div>
+                ${own ? `<div class="detail-actions">
+                    <label class="muted">變更狀態：</label>
+                    <select class="filter-select" id="inlineStatus"></select>
+                    <button class="btn-action" onclick="openEditModal('${esc(c.id)}')">✏️ 編輯</button>
+                    <button class="btn-action btn-del" onclick="deleteRequirement('${esc(c.id)}')">刪除</button>
+                    <button class="btn-action btn-blue" onclick="PM.shareDialog('requirement','${esc(c.id)}',refresh)">🔗 分享${c.shares.length ? `（${c.shares.length}）` : ''}</button>
+                    ${linked ? '' : `<button class="btn-action btn-complete" onclick="convertToProject('${esc(c.id)}')">🚀 轉為正式專案</button>`}
+                </div>` : (PM.canTrack(c) ? '<div class="readonly-note">此需求案件由他人擁有：你可以查看並新增討論紀錄，案件內容與狀態只有擁有者能修改。</div>' : '')}
+                <div class="detail-meta-grid">
+                    <div><strong>項目類型：</strong>${esc(c.type)}</div>
+                    <div><strong>所屬廠區：</strong>${esc(c.factory)}</div>
+                    <div><strong>提出日期：</strong>${esc(c.createdDate || '-')}</div>
+                    <div><strong>使用單位：</strong>${esc(c.dept)}</div>
+                    <div><strong>提出人員：</strong>${esc(c.user)}</div>
+                    <div><strong>評估狀態：</strong>${esc(c.status)}</div>
+                </div>
+            </div>
+            ${linked ? `<div class="linked-box">🔗 已轉立正式專案：<a href="index.html#${encodeURIComponent(linked.id)}">${esc(linked.name)}</a>（${esc(linked.status)}，進度 ${linked.progress}%）</div>`
+                : c.linkedProjectId ? '<div class="linked-box">🔗 已轉立正式專案（此專案未分享給你）</div>' : ''}
+            <div>
+                <div class="req-section-title">📌 現場現況痛點與實際需求描述</div>
+                <div class="req-desc-card">${esc(c.desc)}</div>
+                <div class="req-section-title">🎯 預期目標效益</div>
+                <div class="req-desc-card" style="border-left-color:#38a169;">${esc(c.target || '尚未填寫效益目標')}</div>
+            </div>
+            <div>
+                <div class="discussions-header">
+                    <div style="font-size:15px;font-weight:700;color:#1a202c;">💬 需求討論與評估紀錄歷程 (${c.discussions.length} 則)</div>
+                    <button class="btn-add-disc edit-only" onclick="openDiscModal('${esc(c.id)}')">＋ 新增討論紀錄</button>
+                </div>
+                <div class="disc-list">${discHtml}</div>
+            </div>`;
+
+        const sel = document.getElementById('inlineStatus');
+        if (!sel) return;
+        PM.fillSelect(sel, PM.REQ_STATUSES, c.status);
+        sel.onchange = async () => { await PM.act(() => PM.api.patchRequirement(c.id, { status: sel.value }), '狀態已更新'); refresh(); };
+    }
+
+    function refresh() { renderTabs(); renderCaseList(); }
+
+    /* ---------- 新增 / 編輯需求 ---------- */
+    function buildTypeSelector(selected) {
+        const types = PM.getDicts().projTypes.slice();
+        if (selected && !types.includes(selected)) types.push(selected);
+        document.getElementById('modalSelectedType').value = selected;
+        const box = document.getElementById('typeSelector');
+        box.innerHTML = types.map(t => `<div class="type-select-btn ${t === selected ? 'selected' : ''}" data-type="${esc(t)}">${icon(t)} ${esc(t)}</div>`).join('');
+        box.querySelectorAll('.type-select-btn').forEach(b => b.onclick = () => {
+            box.querySelectorAll('.type-select-btn').forEach(x => x.classList.remove('selected'));
+            b.classList.add('selected');
+            document.getElementById('modalSelectedType').value = b.dataset.type;
+        });
+    }
+
+    function openCreateModal() {
+        const dicts = PM.getDicts();
+        document.getElementById('editReqId').value = '';
+        document.getElementById('reqModalTitle').textContent = '＋ 建立新項目需求評估';
+        document.getElementById('btnSubmitReq').textContent = '確認建立需求';
+        document.getElementById('initDiscGroup').style.display = '';
+        buildTypeSelector(currentCategory);
+        PM.fillSelect('newReqFactory', dicts.factories, document.getElementById('fFactory').value || dicts.factories[0]);
+        PM.fillSelect('newReqStatus', PM.REQ_STATUSES.filter(s => s !== '已轉專案'), '需求討論中');
+        ['newReqTitle', 'newReqDept', 'newReqUser', 'newReqDesc', 'newReqTarget', 'newReqInitDisc'].forEach(id => document.getElementById(id).value = '');
+        PM.openModal('createReqModal');
+    }
+
+    function openEditModal(id) {
+        const c = PM.getRequirements().find(x => x.id === id);
+        if (!c) return;
+        document.getElementById('editReqId').value = id;
+        document.getElementById('reqModalTitle').textContent = '✏️ 編輯需求評估案件';
+        document.getElementById('btnSubmitReq').textContent = '儲存變更';
+        document.getElementById('initDiscGroup').style.display = 'none';
+        buildTypeSelector(c.type);
+        PM.fillSelect('newReqFactory', PM.getDicts().factories, c.factory);
+        PM.fillSelect('newReqStatus', PM.REQ_STATUSES, c.status);
+        document.getElementById('newReqTitle').value = c.title;
+        document.getElementById('newReqDept').value = c.dept;
+        document.getElementById('newReqUser').value = c.user;
+        document.getElementById('newReqDesc').value = c.desc;
+        document.getElementById('newReqTarget').value = c.target || '';
+        PM.openModal('createReqModal');
+    }
+
+    async function submitRequirement() {
+        const v = id => document.getElementById(id).value.trim();
+        const data = { type: v('modalSelectedType'), title: v('newReqTitle'), factory: v('newReqFactory'), dept: v('newReqDept'),
+            user: v('newReqUser'), status: v('newReqStatus'), desc: v('newReqDesc'), target: v('newReqTarget') };
+        if (!data.title || !data.dept || !data.user || !data.desc) { alert('請完整填寫案件名稱、使用單位、提出人員與實際需求說明！'); return; }
+
+        const editId = v('editReqId');
+        const existing = editId ? PM.getRequirements().find(x => x.id === editId) : null;
+        const id = editId || PM.newId();
+        const init = v('newReqInitDisc');
+        const ok = await PM.act(async () => {
+            await PM.api.saveRequirement(Object.assign({ id, createdDate: existing ? existing.createdDate : PM.today(),
+                linkedProjectId: existing ? existing.linkedProjectId : null }, data));
+            if (!editId && init) await PM.api.addDiscussion(id, { date: PM.today(), type: PM.getDicts().recordTypes[0], internal: data.user, content: init });
+        }, editId ? '案件已更新' : '需求案件已建立');
+        if (!ok) return;
+        PM.closeModal('createReqModal');
+        currentCategory = data.type;
+        currentSelectedCaseId = id;
+        document.getElementById('fStatus').value = '';
+        document.getElementById('fFactory').value = '';
+        refresh();
+    }
+
+    async function deleteRequirement(id) {
+        const c = PM.getRequirements().find(x => x.id === id);
+        if (!c || !confirm(`確定刪除需求案件「${c.title}」及其所有討論紀錄？`)) return;
+        await PM.act(() => PM.api.deleteRequirement(id), '案件已刪除');
+        currentSelectedCaseId = null;
+        refresh();
+    }
+
+    function convertToProject(id) {
+        const c = PM.getRequirements().find(x => x.id === id);
+        if (c && confirm(`將「${c.title}」轉為正式專案？\n（將前往新增專案頁面並自動帶入名稱、類型、廠區）`))
+            location.href = 'create_project.html?fromReq=' + encodeURIComponent(id);
+    }
+
+    /* ---------- 討論紀錄 ---------- */
+    // discId 有值＝修改自己寫的討論紀錄
+    function openDiscModal(caseId, discId) {
+        const c = PM.getRequirements().find(x => x.id === caseId);
+        const d = discId && c ? c.discussions.find(x => x.id === discId) : null;
+        if (discId && !PM.isAuthor(d)) { alert('只有撰寫人可以修改這筆紀錄。'); return; }
+        document.getElementById('currentCaseIdForDisc').value = caseId;
+        document.getElementById('editDiscId').value = d ? d.id : '';
+        document.getElementById('discModalTitle').textContent = d ? '✏️ 修改需求討論紀錄' : '💬 新增需求討論紀錄';
+        document.getElementById('discDate').value = d ? d.date : PM.today();
+        PM.fillSelect('discType', PM.getDicts().recordTypes, d ? d.type : undefined);
+        PM.attendeeSelect('discInternal', '內部單位');
+        PM.attendeeSelect('discExternal', '外部廠商');
+        document.getElementById('discInternal').value = d ? d.internal : '';
+        document.getElementById('discExternal').value = d ? d.external : '';
+        document.getElementById('discContent').value = d ? d.content : '';
+        PM.openModal('addDiscModal');
+    }
+
+    async function submitNewDiscussion() {
+        const v = id => document.getElementById(id).value.trim();
+        if (!v('discDate')) { alert('請選擇討論日期！'); return; }
+        if (!v('discContent')) { alert('請填寫討論內容與決議事項！'); return; }
+        const editId = v('editDiscId');
+        const d = { date: v('discDate'), type: v('discType'), internal: v('discInternal'), external: v('discExternal'), content: v('discContent') };
+        const ok = await PM.act(() => editId ? PM.api.updateDiscussion(editId, d) : PM.api.addDiscussion(v('currentCaseIdForDisc'), d),
+            editId ? '討論紀錄已修改' : '討論紀錄已新增');
+        if (ok) { PM.closeModal('addDiscModal'); refresh(); }
+    }
+
+    async function deleteDiscussion(discId) {
+        if (!confirm('確定刪除此筆討論紀錄？')) return;
+        await PM.act(() => PM.api.deleteDiscussion(discId), '紀錄已刪除');
+        refresh();
+    }
+
+    /* ================= CSV 問卷表格匯入：需求評估 ================= */
+    function reqCsvSpec() {
+        const d = PM.getDicts();
+        const statuses = PM.REQ_STATUSES.filter(s => s !== '已轉專案');
+        return {
+            name: '項目需求評估', title: '項目需求評估',
+            columns: [
+                { key: 'type', label: '項目類型', required: true, hint: '可填：' + d.projTypes.join('／'), aliases: ['類型', '工程類型'] },
+                { key: 'title', label: '案件名稱', required: true },
+                { key: 'factory', label: '所屬廠區', required: true, hint: '可填：' + d.factories.join('／'), aliases: ['廠區'] },
+                { key: 'dept', label: '使用單位', required: true, hint: '需求單位', aliases: ['需求單位'] },
+                { key: 'user', label: '提出人員', required: true },
+                { key: 'status', label: '評估階段狀態', hint: '可填：' + statuses.join('／') + '；空白＝需求討論中', aliases: ['狀態', '階段狀態'] },
+                { key: 'createdDate', label: '提出日期', hint: '格式 2026-11-01；空白＝今天' },
+                { key: 'desc', label: '實際需求與現場痛點描述', required: true, aliases: ['需求描述', '現況痛點描述', '需求與痛點描述'] },
+                { key: 'target', label: '預期目標效益', aliases: ['預期效益'] },
+                { key: 'initDisc', label: '第一筆討論紀錄', hint: '初次溝通結論，可空白', aliases: ['討論紀錄'] }
+            ],
+            prepare(rows, ctx) {
+                const existing = new Set(PM.getRequirements().map(r => r.title.trim()));
+                const seen = new Set();
+                return rows.map(r => {
+                    const it = { line: r.__line, title: r.title || '（未填案件名稱）', errors: [], warnings: [], dictAdds: [] };
+                    ['type', 'title', 'factory', 'dept', 'user', 'desc'].forEach(k => { if (!r[k]) it.errors.push(`「${this.columns.find(c => c.key === k).label}」未填`); });
+                    const type = ctx.dict('projTypes', r.type, '項目類型', it);
+                    const factory = ctx.dict('factories', r.factory, '所屬廠區', it);
+                    let status = PM.csvVal.pick(r.status, statuses, { '討論中': '需求討論中', '場勘': '現場場勘評估', '成案': '方案確認成案', '暫緩': '暫緩／不成案', '不成案': '暫緩／不成案' });
+                    if (status === null) { it.errors.push(`評估階段狀態「${r.status}」無效，可填：${statuses.join('／')}`); }
+                    const date = PM.csvVal.date(r.createdDate);
+                    if (date === null) it.errors.push(`提出日期「${r.createdDate}」格式錯誤，請填 2026-11-01`);
+                    if (r.title && existing.has(r.title)) it.warnings.push('系統已有同名案件，仍會另外新增一筆');
+                    if (r.title && seen.has(r.title)) it.warnings.push('檔案中有重複的案件名稱');
+                    seen.add(r.title);
+                    it.sub = [type || r.type, factory || r.factory, r.dept, r.user, status === null ? r.status : (status || '需求討論中'), date || r.createdDate].filter(Boolean).join('｜');
+                    it.data = { type, title: r.title, factory, dept: r.dept, user: r.user, status: status || '需求討論中',
+                        createdDate: date || PM.today(), desc: r.desc, target: r.target, initDisc: r.initDisc };
+                    return it;
+                });
+            },
+            async commit(items, progress) {
+                let n = 0;
+                for (const it of items) {
+                    const id = PM.newId();
+                    const { initDisc, ...data } = it.data;
+                    await PM.api.saveRequirement(Object.assign({ id, linkedProjectId: null }, data));
+                    if (initDisc) await PM.api.addDiscussion(id, { date: data.createdDate, type: PM.getDicts().recordTypes[0], internal: data.user, content: initDisc });
+                    progress(++n, items.length);
+                }
+            },
+            okMsg: n => `已匯入 ${n} 件需求評估`,
+            onDone(items) { if (items[0]) { currentCategory = items[0].data.type; currentSelectedCaseId = null; } refresh(); }
+        };
+    }
+
+    PM.boot('requirements', () => {
+        PM.injectPeopleDatalist();
+        PM.fillSelect('fFactory', PM.getDicts().factories, '', '全部廠區');
+        PM.fillScope('fScope');
+        PM.fillSelect('fStatus', PM.REQ_STATUSES, '', '全部狀態');
+        if (currentSelectedCaseId) {
+            const target = PM.getRequirements().find(r => r.id === currentSelectedCaseId);
+            if (target) { currentCategory = target.type; if (PM.scopeOf(target) === 'admin') document.getElementById('fScope').value = 'admin'; }
+        }
+        refresh();
+    });
+</script>
+</body>
+</html>

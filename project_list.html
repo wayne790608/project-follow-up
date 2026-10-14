@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>專案管理項目列表 - 專案管理系統</title>
+    <link rel="stylesheet" href="assets/common.css">
+    <style>
+        .proj-table { width: 100%; border-collapse: collapse; font-size: 13.5px; text-align: left; min-width: 980px; }
+        .proj-table th { background: #f8fafc; color: var(--c-muted); font-weight: 700; padding: 13px 16px; border-bottom: 1px solid var(--c-border); }
+        .proj-table td { padding: 13px 16px; border-bottom: 1px solid #edf2f7; vertical-align: middle; }
+        tr.row-terminated td { background: #f7fafc; color: var(--c-muted); }
+        tr.row-terminated .proj-title { color: var(--c-muted); text-decoration: line-through; }
+        tr.row-completed td { background: #f0fdf4; }
+        tr.row-completed .proj-title { color: #15803d; }
+        .proj-title { font-size: 15px; font-weight: 700; color: var(--c-primary-dark); margin: 4px 0 2px; }
+
+        .detail-row { display: none; }
+        .detail-row.open { display: table-row; }
+        .detail-row > td { background: #f8fafc; padding: 0 !important; }
+        .detail-container { padding: 18px 24px; border-bottom: 2px solid var(--c-border); }
+        .detail-header-flex { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 10px; flex-wrap: wrap; }
+        .records-scroll-wrap { max-height: 380px; overflow: auto; border: 1px solid var(--c-border); border-radius: 6px; background: #fff; }
+        .records-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+        .records-table th { background: #edf2f7; color: #4a5568; padding: 8px 12px; position: sticky; top: 0; z-index: 2; text-align: left; }
+        .records-table td { padding: 8px 12px; border-bottom: 1px solid #edf2f7; vertical-align: top; }
+    </style>
+</head>
+<body>
+    <aside class="sidebar" id="sidebar"></aside>
+
+    <main class="main-wrapper">
+        <div class="top-navbar">
+            <div class="nav-title">專案管理項目列表</div>
+            <div class="nav-actions edit-only">
+                <button class="btn btn-outline" onclick="PM.csvTemplate(projCsvSpec())" title="下載空白 CSV 問卷表格，可用 Excel 填寫後匯入">📄 輸出問卷表格</button>
+                <button class="btn btn-outline green" onclick="PM.csvImport(projCsvSpec())" title="匯入填好的 CSV 問卷表格">📥 匯入 CSV</button>
+                <a href="create_project.html" class="btn btn-primary">＋ 新增專案項目</a>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="toolbar">
+                <div class="toolbar-inline">
+                    <input type="text" id="searchInput" class="search-box" placeholder="🔍 搜尋專案名稱、廠區、類型或負責人..." oninput="renderProjects()">
+                    <select id="fScope" class="filter-select" onchange="renderProjects()"></select>
+                    <select id="fStatus" class="filter-select" onchange="renderProjects()"></select>
+                    <select id="fFactory" class="filter-select" onchange="renderProjects()"></select>
+                    <select id="fType" class="filter-select" onchange="renderProjects()"></select>
+                </div>
+                <span class="muted" id="countLabel"></span>
+            </div>
+            <div class="table-scroll">
+                <table class="proj-table">
+                    <thead>
+                        <tr>
+                            <th style="width:290px;">專案名稱 / 類型 / 廠區</th>
+                            <th style="width:150px;">負責人 (PM / Owner)</th>
+                            <th style="width:170px;">期程</th>
+                            <th style="width:120px;">總進度</th>
+                            <th style="width:100px;">狀態</th>
+                            <th>操作功能</th>
+                        </tr>
+                    </thead>
+                    <tbody id="projectsBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modal：新增執行履歷 -->
+    <div class="modal-overlay" id="recordModal">
+        <div class="modal-box">
+            <div class="modal-title" id="recModalTitle">📌 新增執行履歷追蹤紀錄</div>
+            <input type="hidden" id="currentProjId"><input type="hidden" id="editRecId">
+            <div class="form-grid-2">
+                <div class="form-group"><label>執行日期 <span class="req">*</span></label><input type="date" id="mDate"></div>
+                <div class="form-group"><label>追蹤紀錄類別 <span class="req">*</span></label><select id="mType"></select></div>
+            </div>
+            <div class="form-group"><label>關聯項目模塊 <span class="req">*</span></label><select id="mModule"></select></div>
+            <div class="form-group"><label>內部與會人員 (單位/姓名)</label><div id="mInternal"></div></div>
+            <div class="form-group"><label>外部廠商與會人員 (廠商/姓名)</label><div id="mExternal"></div></div>
+            <div class="form-group"><label>紀錄結論與事項說明 <span class="req">*</span></label><textarea id="mDetail" rows="3" placeholder="請詳細填寫會議決議、審查結果或異常排查事項..."></textarea></div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" onclick="PM.closeModal('recordModal')">取消</button>
+                <button type="button" class="btn btn-primary" onclick="saveRecord()">確認新增</button>
+            </div>
+        </div>
+    </div>
+
+<script src="assets/vendor/supabase.js"></script>
+<script src="assets/config.js"></script>
+<script src="assets/offline-db.js"></script>
+<script src="assets/common.js"></script>
+<script src="assets/csv-import.js"></script>
+<script>
+    const esc = PM.esc;
+    const openDetails = new Set();
+
+    function renderProjects() {
+        const q = document.getElementById('searchInput').value.trim().toLowerCase();
+        const fs = document.getElementById('fStatus').value;
+        const ff = document.getElementById('fFactory').value;
+        const ft = document.getElementById('fType').value;
+        const scope = document.getElementById('fScope').value;
+        const all = PM.getProjects().filter(p => !scope ? (p.isMine || PM.isSharedToMe(p)) : PM.scopeOf(p) === scope);
+        const list = all.filter(p =>
+            [p.name, p.factory, p.type, p.pm, p.owner].some(v => String(v || '').toLowerCase().includes(q)) &&
+            (!fs || p.status === fs) && (!ff || p.factory === ff) && (!ft || p.type === ft));
+
+        document.getElementById('countLabel').textContent = `顯示 ${list.length} / ${all.length} 個專案`;
+        const tbody = document.getElementById('projectsBody');
+        if (!list.length) { tbody.innerHTML = `<tr><td colspan="6" class="empty">查無符合條件的專案</td></tr>`; return; }
+
+        tbody.innerHTML = list.map(p => {
+            const rowClass = p.status === '專案終止' ? 'row-terminated' : p.status === '專案完成' ? 'row-completed' : '';
+            const closed = p.status === '專案終止' || p.status === '專案完成';
+            const stale = PM.staleDays(p);
+            const recs = p.records;
+            const recRows = recs.length ? recs.map(r => `
+                <tr>
+                    <td class="mono" style="font-weight:bold;white-space:nowrap;">${esc(r.date)}</td>
+                    <td>${PM.recTag(r.type)}</td>
+                    <td style="white-space:nowrap;">${esc(r.targetModule || '-')}</td>
+                    <td>${esc(r.internalAttendees || '-')}</td>
+                    <td>${esc(r.externalAttendees || '-')}</td>
+                    <td style="white-space:pre-wrap">${esc(r.detail)}</td>
+                    <td>${PM.authorLine(r)}</td>
+                    <td style="white-space:nowrap">${PM.isAuthor(r) ? `<button class="btn-mini" title="修改" onclick="openRecordModal('${esc(p.id)}','${esc(r.id)}')">✎</button><button class="btn-mini del" title="刪除" onclick="deleteRecord('${esc(r.id)}')">×</button>` : ''}</td>
+                </tr>`).join('') : `<tr><td colspan="8" class="empty" style="padding:20px">尚無執行履歷紀錄</td></tr>`;
+
+            return `
+            <tr class="${rowClass}">
+                <td>
+                    ${PM.typeTag(p.type)}<span class="badge-factory">${esc(p.factory)}</span>
+                    <div class="proj-title">${esc(p.name)}</div>
+                    <div>${PM.ownerBadge(p)}</div>
+                    ${stale ? `<div class="warn-text">⚠ 履歷已 ${stale} 天未更新</div>` : ''}
+                </td>
+                <td><strong>${esc(p.pm || '-')}</strong><div class="muted">Owner: ${esc(p.owner)}</div></td>
+                <td><div class="mono" style="font-size:12px;">${esc(p.start)}<br>~ ${esc(p.end)}</div></td>
+                <td><strong>${p.progress}%</strong><div class="progress-track"><div class="progress-fill ${p.progress >= 100 ? 'done' : ''}" style="width:${p.progress}%"></div></div></td>
+                <td>${PM.statusBadge(p.status)}</td>
+                <td>
+                    <button class="btn-action" onclick="toggleDetails('${esc(p.id)}')">${openDetails.has(p.id) ? '收起履歷' : '檢視履歷'} (${recs.length})</button>
+                    <a class="btn-action btn-blue" href="index.html#${encodeURIComponent(p.id)}">甘特圖</a>
+                    ${PM.isOwner(p) ? `
+                    <button class="btn-action btn-blue" onclick="PM.shareDialog('project','${esc(p.id)}',renderProjects)">🔗 分享${p.shares.length ? `（${p.shares.length}）` : ''}</button>
+                    <a class="btn-action" href="create_project.html?id=${encodeURIComponent(p.id)}">編輯</a>
+                    ${closed
+                        ? `<button class="btn-action" onclick="changeStatus('${esc(p.id)}','進行中')">重新啟用</button>`
+                        : `<button class="btn-action btn-complete" onclick="changeStatus('${esc(p.id)}','專案完成')">完成</button>
+                           <button class="btn-action" onclick="changeStatus('${esc(p.id)}','專案終止')">終止</button>`}
+                    <button class="btn-action btn-del" onclick="deleteProject('${esc(p.id)}')">刪除</button>` : ''}
+                </td>
+            </tr>
+            <tr class="detail-row ${openDetails.has(p.id) ? 'open' : ''}">
+                <td colspan="6">
+                    <div class="detail-container">
+                        <div class="detail-header-flex">
+                            <div><strong>📋 執行履歷明細</strong><span class="muted" style="margin-left:10px;">共 ${recs.length} 筆，依日期新→舊排序</span></div>
+                            <div style="display:flex;gap:8px;">
+                                <button class="btn-action btn-blue edit-only" onclick="openRecordModal('${esc(p.id)}')">＋ 新增紀錄</button>
+                                <button class="btn btn-success" style="padding:6px 12px;font-size:12px;" onclick="exportRecordsToCSV('${esc(p.id)}')">📥 輸出 CSV</button>
+                            </div>
+                        </div>
+                        <div class="records-scroll-wrap">
+                            <table class="records-table">
+                                <thead><tr>
+                                    <th style="width:95px;">日期</th><th style="width:105px;">類別</th><th style="width:140px;">針對模塊</th>
+                                    <th style="width:140px;">內部與會人員</th><th style="width:140px;">外部廠商與會人員</th><th>追蹤內容與決議事項</th><th style="width:90px;">填寫人</th><th style="width:52px;"></th>
+                                </tr></thead>
+                                <tbody>${recRows}</tbody>
+                            </table>
+                        </div>
+                    </div>
+                </td>
+            </tr>`;
+        }).join('');
+    }
+
+    function toggleDetails(id) {
+        openDetails.has(id) ? openDetails.delete(id) : openDetails.add(id);
+        renderProjects();
+    }
+
+    async function changeStatus(id, newStatus) {
+        const p = PM.getProject(id);
+        if (!p || !confirm(`確定將「${p.name}」狀態變更為「${newStatus}」？`)) return;
+        await PM.act(async () => {
+            await PM.api.patchProject(id, { status: newStatus });
+            await PM.api.addRecord(id, { date: PM.today(), type: '系統紀錄', targetModule: '全專案整體',
+                detail: `專案狀態由「${p.status}」變更為「${newStatus}」（${PM.user.email}）` });
+        }, '狀態已更新');
+        renderProjects();
+    }
+
+    async function deleteProject(id) {
+        const p = PM.getProject(id);
+        if (!p || !confirm(`確定永久刪除專案「${p.name}」及其所有任務、履歷與照片？此操作無法復原。`)) return;
+        await PM.act(() => PM.api.deleteProject(id), '專案已刪除');
+        renderProjects();
+    }
+
+    function exportRecordsToCSV(id) {
+        const p = PM.getProject(id);
+        if (!p || !p.records.length) { alert('目前無履歷資料可匯出！'); return; }
+        const rows = p.records.slice().reverse().map(r => [p.name, r.date, r.type, r.targetModule, r.internalAttendees, r.externalAttendees, r.detail, PM.memberName(r.authorEmail)]);
+        PM.downloadCSV(['專案名稱', '日期', '類別', '針對模塊', '內部與會人員', '外部廠商與會人員', '決議事項與說明', '填寫人'], rows,
+            `${p.name}_執行履歷紀錄_${PM.today()}.csv`);
+    }
+
+    // rid 有值＝修改自己寫的紀錄
+    function openRecordModal(id, rid) {
+        const p = PM.getProject(id);
+        if (!p) return;
+        const r = rid ? p.records.find(x => x.id === rid) : null;
+        if (rid && !PM.isAuthor(r)) { alert('只有撰寫人可以修改這筆紀錄。'); return; }
+        document.getElementById('currentProjId').value = id;
+        document.getElementById('editRecId').value = r ? r.id : '';
+        document.getElementById('recModalTitle').textContent = r ? '✏️ 修改執行履歷追蹤紀錄' : '📌 新增執行履歷追蹤紀錄';
+        document.getElementById('mDate').value = r ? r.date : PM.today();
+        PM.fillSelect('mType', PM.getDicts().recordTypes, r ? r.type : undefined);
+        PM.fillSelect('mModule', ['全專案整體', ...p.modules.map(m => m.name)], r ? (r.targetModule || '全專案整體') : '全專案整體');
+        PM.attendeeSelect('mInternal', '內部單位');
+        PM.attendeeSelect('mExternal', '外部廠商');
+        document.getElementById('mInternal').value = r ? r.internalAttendees : '';
+        document.getElementById('mExternal').value = r ? r.externalAttendees : '';
+        document.getElementById('mDetail').value = r ? r.detail : '';
+        PM.openModal('recordModal');
+    }
+
+    async function saveRecord() {
+        const id = document.getElementById('currentProjId').value;
+        const detail = document.getElementById('mDetail').value.trim();
+        const date = document.getElementById('mDate').value;
+        if (!date) { alert('請選擇執行日期！'); return; }
+        if (!detail) { alert('請填寫追蹤事項內容！'); return; }
+        const editId = document.getElementById('editRecId').value;
+        const rec = {
+            date, detail,
+            type: document.getElementById('mType').value,
+            targetModule: document.getElementById('mModule').value,
+            internalAttendees: document.getElementById('mInternal').value.trim(),
+            externalAttendees: document.getElementById('mExternal').value.trim()
+        };
+        const ok = await PM.act(() => editId ? PM.api.updateRecord(editId, rec) : PM.api.addRecord(id, rec), editId ? '紀錄已修改' : '紀錄已新增');
+        if (ok) { openDetails.add(id); PM.closeModal('recordModal'); renderProjects(); }
+    }
+
+    async function deleteRecord(rid) {
+        if (!confirm('確定刪除此筆履歷紀錄？')) return;
+        await PM.act(() => PM.api.deleteRecord(rid), '紀錄已刪除');
+        renderProjects();
+    }
+
+    /* ================= CSV 問卷表格匯入：專案（一列一個細項，同名專案自動合併） ================= */
+    function projCsvSpec() {
+        const d = PM.getDicts();
+        const V = PM.csvVal;
+        return {
+            name: '專案管理項目', title: '專案管理項目（含大項目與細項）',
+            columns: [
+                { key: 'name', label: '專案名稱', required: true, hint: '同一專案有多個細項時，每一列都填相同的專案名稱' },
+                { key: 'type', label: '專案類型', required: true, hint: '可填：' + d.projTypes.join('／') + '；同專案只需在第一列填寫', aliases: ['專案項目類型', '類型'] },
+                { key: 'factory', label: '所屬廠區', required: true, hint: '可填：' + d.factories.join('／'), aliases: ['廠區'] },
+                { key: 'status', label: '專案狀態', hint: '可填：' + PM.PROJECT_STATUSES.join('／') + '；空白＝進行中', aliases: ['狀態'] },
+                { key: 'start', label: '起始日期', required: true, hint: '格式 2026-11-01', aliases: ['專案起始日期', '開始日期'] },
+                { key: 'end', label: '預計結束日期', required: true, hint: '格式 2027-05-31', aliases: ['結束日期', '專案結束日期'] },
+                { key: 'owner', label: '專案Owner', hint: '最終責任人', aliases: ['owner', '專案owner'] },
+                { key: 'pm', label: '專案負責人', required: true, hint: '推動執行者，可多人以逗號分隔', aliases: ['pm', '負責人'] },
+                { key: 'module', label: '大項目名稱', hint: '例：一、硬體到貨與配置；空白則只建立專案', aliases: ['大項目', '模塊'] },
+                { key: 'moduleOwner', label: '大項目Owner', aliases: ['大項目負責人'] },
+                { key: 'task', label: '細項名稱', hint: '例：1. 全部設備到貨驗收', aliases: ['細項', '細項任務名稱', '小項目'] },
+                { key: 'taskPm', label: '細項負責人' },
+                { key: 'taskOwner', label: '細項驗收人', aliases: ['owner驗收人', '驗收人'] },
+                { key: 'taskStart', label: '細項開始日期', hint: '空白＝專案起始日', aliases: ['開始時間'] },
+                { key: 'taskEnd', label: '細項結束日期', hint: '空白＝專案結束日', aliases: ['結束時間'] },
+                { key: 'progress', label: '進度', hint: '0～100，可填 40 或 40%；空白＝0', aliases: ['進度%', '細項進度'] }
+            ],
+            prepare(rows, ctx) {
+                const existing = new Set(PM.getProjects().map(p => p.name.trim()));
+                const groups = new Map();
+                const out = [];
+                rows.forEach(r => {
+                    if (!r.name) { out.push({ line: r.__line, title: '（未填專案名稱）', errors: ['「專案名稱」未填'], warnings: [], dictAdds: [] }); return; }
+                    if (!groups.has(r.name)) groups.set(r.name, []);
+                    groups.get(r.name).push(r);
+                });
+                groups.forEach((rs, name) => {
+                    const lines = rs.map(r => r.__line);
+                    const it = { key: 'p:' + name, line: lines[0], lineLabel: lines.length > 1 ? `${lines[0]}–${lines[lines.length - 1]}` : String(lines[0]),
+                        title: name, errors: [], warnings: [], dictAdds: [] };
+                    // 專案層級欄位：取第一個有填的值；若不同列填了不同的值則提醒
+                    const first = k => { const vals = [...new Set(rs.map(r => r[k]).filter(Boolean))]; if (vals.length > 1) it.warnings.push(`「${this.columns.find(c => c.key === k).label}」各列不一致，採用第一個值「${vals[0]}」`); return vals[0] || ''; };
+                    const raw = { type: first('type'), factory: first('factory'), status: first('status'), start: first('start'), end: first('end'), owner: first('owner'), pm: first('pm') };
+                    ['type', 'factory', 'start', 'end', 'pm'].forEach(k => { if (!raw[k]) it.errors.push(`「${this.columns.find(c => c.key === k).label}」未填`); });
+                    const type = ctx.dict('projTypes', raw.type, '專案類型', it);
+                    const factory = ctx.dict('factories', raw.factory, '所屬廠區', it);
+                    const status = V.pick(raw.status, PM.PROJECT_STATUSES, { '完成': '專案完成', '終止': '專案終止' });
+                    if (status === null) it.errors.push(`專案狀態「${raw.status}」無效，可填：${PM.PROJECT_STATUSES.join('／')}`);
+                    const start = V.date(raw.start), end = V.date(raw.end);
+                    if (raw.start && start === null) it.errors.push(`起始日期「${raw.start}」格式錯誤，請填 2026-11-01`);
+                    if (raw.end && end === null) it.errors.push(`結束日期「${raw.end}」格式錯誤，請填 2027-05-31`);
+                    if (start && end && end < start) it.errors.push('預計結束日期早於起始日期');
+                    if (existing.has(name)) { it.warnings.push('系統已有同名專案，預設不匯入（如確定要另外新增請勾選）'); it.include = false; }
+
+                    const modules = [];
+                    rs.forEach(r => {
+                        if (!r.module && !r.task) return;
+                        if (!r.module && r.task) { it.errors.push(`第 ${r.__line} 列有細項「${r.task}」但未填大項目名稱`); return; }
+                        let mod = modules.find(m => m.name === r.module);
+                        if (!mod) { mod = { id: PM.newId(), name: r.module, owner: r.moduleOwner, subtasks: [] }; modules.push(mod); }
+                        else if (r.moduleOwner && !mod.owner) mod.owner = r.moduleOwner;
+                        if (!r.task) return;
+                        const ts = V.date(r.taskStart), te = V.date(r.taskEnd), pg = V.percent(r.progress);
+                        if (ts === null) it.errors.push(`第 ${r.__line} 列細項開始日期「${r.taskStart}」格式錯誤`);
+                        if (te === null) it.errors.push(`第 ${r.__line} 列細項結束日期「${r.taskEnd}」格式錯誤`);
+                        if (pg === null) it.errors.push(`第 ${r.__line} 列進度「${r.progress}」需為 0～100`);
+                        const s = ts || start || PM.today(), e = te || end || s;
+                        if (e < s) it.errors.push(`第 ${r.__line} 列細項結束日期早於開始日期`);
+                        else if ((start && s < start) || (end && e > end)) it.warnings.push(`第 ${r.__line} 列細項日期超出專案起訖範圍`);
+                        mod.subtasks.push({ name: r.task, pm: r.taskPm, owner: r.taskOwner, start: s, end: e, progress: pg || 0 });
+                    });
+                    const nTask = modules.reduce((n, m) => n + m.subtasks.length, 0);
+                    it.sub = `${type || raw.type}｜${factory || raw.factory}｜${start || raw.start} ~ ${end || raw.end}｜負責人 ${raw.pm || '-'}｜大項目 ${modules.length}、細項 ${nTask}`;
+                    it.data = { name, type, factory, status: status || '進行中', start, end, owner: raw.owner || '待指定', pm: raw.pm, modules };
+                    out.push(it);
+                });
+                return out.sort((a, b) => a.line - b.line);
+            },
+            async commit(items, progress) {
+                let n = 0;
+                for (const it of items) {
+                    const id = PM.newId();
+                    await PM.api.saveProject(Object.assign({ id, hiddenModules: [] }, it.data));
+                    await PM.api.addRecord(id, { date: PM.today(), type: '系統紀錄', targetModule: '全專案整體', internalAttendees: it.data.pm,
+                        detail: `專案建立（CSV 匯入，${PM.user.email}）` });
+                    progress(++n, items.length);
+                }
+            },
+            okMsg: n => `已匯入 ${n} 個專案`,
+            onDone() { renderProjects(); }
+        };
+    }
+
+    PM.boot('project_list', () => {
+        PM.injectPeopleDatalist();
+        const dicts = PM.getDicts();
+        PM.fillScope('fScope');
+        PM.fillSelect('fStatus', PM.PROJECT_STATUSES, '', '全部狀態');
+        PM.fillSelect('fFactory', dicts.factories, '', '全部廠區');
+        PM.fillSelect('fType', dicts.projTypes, '', '全部類型');
+        const openId = PM.param('open');
+        if (openId) {
+            openDetails.add(openId);
+            const op = PM.getProject(openId);
+            if (op && PM.scopeOf(op) === 'admin') document.getElementById('fScope').value = 'admin';
+        }
+        renderProjects();
+    });
+</script>
+</body>
+</html>

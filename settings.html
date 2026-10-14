@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>系統設定與報表 - 專案管理系統</title>
+    <link rel="stylesheet" href="assets/common.css">
+    <style>
+        .settings-tabs { display: flex; gap: 6px; border-bottom: 2px solid var(--c-border); margin-bottom: 22px; flex-wrap: wrap; }
+        .tab-btn { background: transparent; border: none; padding: 10px 16px; font-size: 14px; font-weight: 700; color: var(--c-muted); cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px; font-family: inherit; }
+        .tab-btn:hover { color: var(--c-primary-dark); }
+        .tab-btn.active { color: var(--c-primary-dark); border-bottom-color: var(--c-primary); }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .settings-card { background: #fff; border-radius: 12px; border: 1px solid var(--c-border); box-shadow: 0 4px 15px rgba(0,0,0,.04); padding: 24px; margin-bottom: 24px; }
+        .card-title { font-size: 16px; font-weight: 700; color: #1a365d; margin-bottom: 8px; }
+        .card-desc { font-size: 13px; color: var(--c-muted); margin-bottom: 18px; line-height: 1.5; }
+
+        .tag-group { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 15px; }
+        .editable-tag { background: #edf2f7; color: #2d3748; padding: 6px 8px 6px 12px; border-radius: 20px; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; border: 1px solid #cbd5e0; }
+        .editable-tag small { color: var(--c-muted); font-weight: 500; }
+        .btn-remove-tag { cursor: pointer; color: #a0aec0; font-size: 15px; border: none; background: transparent; font-weight: bold; padding: 0 4px; }
+        .btn-remove-tag:hover { color: #e53e3e; }
+        .btn-rename-tag { cursor: pointer; color: #a0aec0; font-size: 13px; border: none; background: transparent; padding: 0 2px; }
+        .btn-rename-tag:hover { color: var(--c-primary); }
+        .editable-tag.editing { background: #fff; border-color: var(--c-primary); padding: 3px 6px 3px 8px; box-shadow: 0 0 0 3px #bee3f8; }
+        .tag-rename-input { border: none; outline: none; font-size: 13px; font-weight: 600; width: 130px; padding: 3px 2px; font-family: inherit; }
+        .btn-tag-ok, .btn-tag-cancel { border: none; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-size: 12px; font-weight: 700; }
+        .btn-tag-ok { background: #c6f6d5; color: #22543d; }
+        .btn-tag-cancel { background: #edf2f7; color: #718096; }
+        .tag-input-wrap { display: flex; gap: 8px; max-width: 420px; }
+        .tag-input-wrap input { flex-grow: 1; padding: 7px 12px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 13px; }
+        .btn-add-tag { background: #ebf8ff; color: var(--c-primary-dark); border: 1px solid #bee3f8; padding: 7px 14px; border-radius: 6px; font-size: 13px; font-weight: bold; cursor: pointer; white-space: nowrap; }
+
+        .form-row-setting { display: flex; justify-content: space-between; align-items: center; padding: 14px 0; border-bottom: 1px solid #edf2f7; gap: 16px; }
+        .form-row-setting:last-child { border-bottom: none; }
+        .setting-label { font-size: 14px; font-weight: 700; color: #2d3748; }
+        .setting-sub { font-size: 12px; color: var(--c-muted); margin-top: 4px; }
+        .input-number-short { width: 80px; padding: 6px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 13px; text-align: center; }
+        .switch { position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; inset: 0; background: #cbd5e0; transition: .3s; border-radius: 24px; }
+        .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background: #fff; transition: .3s; border-radius: 50%; }
+        .switch input:checked + .slider { background: var(--c-primary); }
+        .switch input:checked + .slider:before { transform: translateX(20px); }
+
+        .export-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 16px; }
+        .export-box { border: 1px solid var(--c-border); border-radius: 8px; padding: 18px; background: #fafafa; display: flex; flex-direction: column; justify-content: space-between; gap: 12px; }
+        .export-title { font-weight: 700; font-size: 14.5px; color: #1a365d; margin-bottom: 4px; }
+        .export-desc { font-size: 12.5px; color: var(--c-muted); line-height: 1.5; }
+        .storage-bar { height: 10px; background: #edf2f7; border-radius: 5px; overflow: hidden; margin: 8px 0 4px; max-width: 420px; }
+        .storage-fill { height: 100%; background: var(--c-primary); }
+            .member-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+        .member-table th { text-align: left; background: #f8fafc; color: var(--c-muted); padding: 10px 12px; border-bottom: 1px solid var(--c-border); }
+        .member-table td { padding: 10px 12px; border-bottom: 1px solid #edf2f7; }
+        .import-log { background: #1a202c; color: #c6f6d5; font-family: ui-monospace, Menlo, monospace; font-size: 12px; padding: 12px; border-radius: 6px; max-height: 220px; overflow: auto; white-space: pre-wrap; display: none; margin-top: 12px; }
+        .info-box { background: #ebf8ff; border: 1px solid #bee3f8; color: #2a4365; padding: 12px 14px; border-radius: 8px; font-size: 13px; line-height: 1.6; }
+    </style>
+</head>
+<body>
+    <aside class="sidebar" id="sidebar"></aside>
+
+    <main class="main-wrapper">
+        <div class="top-navbar"><div class="nav-title">系統設定與報表中心</div></div>
+
+        <div class="settings-tabs">
+            <button class="tab-btn active" data-tab="tab-dicts">⚙️ 基礎參數字典</button>
+            <button class="tab-btn" data-tab="tab-rules">🔔 預警規則</button>
+            <button class="tab-btn" data-tab="tab-reports">📊 報表中心</button>
+            <button class="tab-btn edit-only" data-tab="tab-backup">💾 備份與匯入</button>
+            <button class="tab-btn" data-tab="tab-members" id="tabMembersBtn" style="display:none">🔐 成員與權限</button>
+        </div>
+
+        <!-- 分頁 1：參數字典 -->
+        <div class="tab-content active" id="tab-dicts">
+            <div class="settings-card">
+                <div class="card-title">🏷️ 專案項目類型管理</div>
+                <div class="card-desc">新增專案、需求評估分頁與篩選器會使用此清單。括號內數字為目前使用中的資料筆數；按 ✎ 可變更名稱，既有資料會一併更新。</div>
+                <div class="tag-group" id="tags-projTypes"></div>
+                <div class="tag-input-wrap edit-only"><input type="text" id="in-projTypes" placeholder="輸入新類型名稱 (例如：自動充放電樁)"><button class="btn-add-tag" data-add="projTypes">＋ 新增類型</button></div>
+            </div>
+            <div class="settings-card">
+                <div class="card-title">🏭 廠區清單管理</div>
+                <div class="card-desc">定義全集團營運中或籌劃中的廠區據點，廠區管理頁會依此產生卡片。</div>
+                <div class="tag-group" id="tags-factories"></div>
+                <div class="tag-input-wrap edit-only"><input type="text" id="in-factories" placeholder="輸入新廠區名稱 (例如：墨西哥廠)"><button class="btn-add-tag" data-add="factories">＋ 新增廠區</button></div>
+            </div>
+            <div class="settings-card">
+                <div class="card-title">📋 履歷追蹤與會議類別管理</div>
+                <div class="card-desc">專案執行履歷與需求討論紀錄使用的事件類別。</div>
+                <div class="tag-group" id="tags-recordTypes"></div>
+                <div class="tag-input-wrap edit-only"><input type="text" id="in-recordTypes" placeholder="輸入新類別名稱 (例如：跨國視訊協調)"><button class="btn-add-tag" data-add="recordTypes">＋ 新增類別</button></div>
+            </div>
+        </div>
+
+        <!-- 分頁 2：預警規則 -->
+        <div class="tab-content" id="tab-rules">
+            <div class="settings-card">
+                <div class="card-title">⚠️ 甘特圖進度落後預警門檻</div>
+                <div class="card-desc">細項實際進度落後於依時間推算的預期進度達指定天數（或已過結束日仍未完成）時，首頁甘特圖色條轉為橘色。此設定全體成員共用。</div>
+                <div class="form-row-setting">
+                    <div><div class="setting-label">落後天數閥值 (天)</div><div class="setting-sub">預期進度 − 實際進度，換算成天數後超過此值即視為落後</div></div>
+                    <div><input type="number" class="input-number-short" id="set-delayDays" min="1" max="60"> 天</div>
+                </div>
+                <div class="form-row-setting">
+                    <div><div class="setting-label">首頁甘特圖進度落後色條高亮</div><div class="setting-sub">關閉後落後項目仍以一般藍色顯示</div></div>
+                    <label class="switch"><input type="checkbox" id="set-delayHighlight"><span class="slider"></span></label>
+                </div>
+            </div>
+            <div class="settings-card">
+                <div class="card-title">⏱️ 執行履歷追蹤催繳規則</div>
+                <div class="form-row-setting">
+                    <div><div class="setting-label">履歷未更新預警天數</div><div class="setting-sub">「進行中」專案連續超過此天數無任何紀錄時，於首頁與列表顯示 ⚠ 提醒</div></div>
+                    <div><input type="number" class="input-number-short" id="set-staleDays" min="3" max="90"> 天</div>
+                </div>
+                <div style="text-align:right;margin-top:12px;" class="edit-only"><button class="btn btn-primary" onclick="saveRules()">💾 儲存預警規則</button></div>
+            </div>
+        </div>
+
+        <!-- 分頁 3：報表 -->
+        <div class="tab-content" id="tab-reports">
+            <div class="settings-card">
+                <div class="card-title">📑 跨專案數據統計與 CSV 報表匯出</div>
+                <div class="card-desc">CSV 含 UTF-8 BOM，可直接以 Excel 開啟不會亂碼。若需要更彈性的整理，也可以到 Supabase 後台 → Table Editor 開啟 <code>v_專案總表</code>、<code>v_任務明細</code>、<code>v_履歷紀錄</code>、<code>v_需求評估總表</code> 四個檢視表直接篩選與匯出。</div>
+                <div class="export-grid">
+                    <div class="export-box"><div><div class="export-title">📊 全廠區專案執行進度總表</div><div class="export-desc">專案名稱、類型、廠區、PM、Owner、起訖工期、大項/細項數、完成％、狀態、最後紀錄日。</div></div>
+                        <button class="btn btn-success" onclick="exportProjectsSummaryCSV()">📥 匯出專案進度總表</button></div>
+                    <div class="export-box"><div><div class="export-title">🗂️ 全專案任務明細表</div><div class="export-desc">每個大項目底下所有細項的負責人、驗收人、起訖日期、進度與是否落後。</div></div>
+                        <button class="btn btn-success" onclick="exportTasksCSV()">📥 匯出任務明細表</button></div>
+                    <div class="export-box"><div><div class="export-title">📋 全專案履歷會議紀錄綜合明細表</div><div class="export-desc">所有專案的會議、場勘、審查、方案討論、異常狀況歷程與與會人員。</div></div>
+                        <button class="btn btn-success" onclick="exportAllRecordsCSV()">📥 匯出全專案履歷總表</button></div>
+                    <div class="export-box"><div><div class="export-title">📝 項目需求評估總清單</div><div class="export-desc">各類別需求痛點描述、預期效益、狀態與歷次討論次數。</div></div>
+                        <button class="btn btn-success" onclick="exportRequirementsCSV()">📥 匯出需求評估總表</button></div>
+                    <div class="export-box"><div><div class="export-title">👥 全廠區專案人員與廠商名冊</div><div class="export-desc">內部單位與外部廠商窗口之常駐廠區、Email 與負責備註。</div></div>
+                        <button class="btn btn-success" onclick="exportUsersCSV()">📥 匯出人員名冊</button></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 分頁 4：備份與匯入 -->
+        <div class="tab-content" id="tab-backup">
+            <div class="settings-card">
+                <div class="card-title">☁️ 資料儲存位置</div>
+                <div class="info-box">所有資料都儲存在 Supabase 雲端資料庫，換電腦、換瀏覽器或清除瀏覽紀錄都不會遺失。Supabase 免費方案不含自動備份，建議每月下載一次 JSON 備份。<br>
+                    目前資料量：<b id="dataStats"></b></div>
+            </div>
+            <div class="settings-card">
+                <div class="card-title">💾 下載完整備份 (JSON)</div>
+                <div class="card-desc">你目前看得到的專案（含模塊、細項、履歷）、需求評估，以及人員名冊、參數字典與預警規則。照片檔存放在 Storage，備份檔只記錄路徑。</div>
+                <button class="btn btn-primary" onclick="backupSystemData()">📦 下載完整資料庫備份檔</button>
+            </div>
+            <div class="settings-card">
+                <div class="card-title">📥 匯入資料</div>
+                <div class="card-desc">可匯入：① 本系統 v3 備份檔；② <b>舊版（v2.x 瀏覽器版）「系統設定 → 下載完整資料庫備份檔」產生的 JSON</b>，舊版照片會一併上傳到雲端。<br>
+                    匯入的專案與需求會成為<b>你擁有的資料</b>（需要時再分享給其他人）。匯入為「新增／更新」，不會刪除現有資料；同一份 v3 備份重複匯入會覆蓋同一筆，不會重複。</div>
+                <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+                    <input type="file" id="importFileInput" accept=".json,application/json" style="font-size:13px;">
+                    <button class="btn btn-primary" style="background:#4a5568;" onclick="importFromFile()">匯入</button>
+                    <button class="btn btn-secondary" onclick="importDemo()">匯入示範資料</button>
+                </div>
+                <div class="import-log" id="importLog"></div>
+            </div>
+            <div class="settings-card" style="border-color:#feb2b2" id="wipeCard">
+                <div class="card-title" style="color:#e53e3e;">⚠️ 刪除我擁有的所有專案與需求評估</div>
+                <div class="card-desc">只會刪除<b>你自己建立</b>的專案（含細項、履歷、照片）與需求評估；別人分享給你的資料、人員名冊與參數設定不受影響。此操作無法復原，請先下載備份。</div>
+                <button class="btn btn-danger-outline" onclick="wipeAll()">刪除我的全部資料</button>
+            </div>
+        </div>
+
+        <!-- 分頁 5：成員與權限（僅管理員） -->
+        <div class="tab-content" id="tab-members">
+            <div class="settings-card">
+                <div class="card-title">🔐 系統成員與權限</div>
+                <div class="card-desc">只有在此名單內的 Email 登入後才能看到資料。新同事流程：① 在此新增 Email 與權限 → ② 請對方打開網站，在登入頁點「首次使用註冊」並完成 Email 驗證。<br>
+                    權限：<b>管理員</b> 可管理成員與清空資料；<b>編輯者</b> 可新增／修改所有資料；<b>唯讀</b> 只能瀏覽與匯出報表。</div>
+                <div class="form-grid-2" style="max-width:720px;grid-template-columns:2fr 1.2fr 1.2fr auto;align-items:end;">
+                    <div class="form-group" style="margin:0"><label>Email</label><input type="email" id="memEmail" placeholder="name@company.com"></div>
+                    <div class="form-group" style="margin:0"><label>顯示名稱</label><input type="text" id="memName" placeholder="選填"></div>
+                    <div class="form-group" style="margin:0"><label>權限</label><select id="memRole"><option value="editor">編輯者</option><option value="viewer">唯讀</option><option value="admin">管理員</option></select></div>
+                    <button class="btn btn-primary" onclick="addMember()">＋ 新增／更新</button>
+                </div>
+                <div class="table-scroll" style="margin-top:18px;">
+                    <table class="member-table"><thead><tr><th>Email</th><th>顯示名稱</th><th>權限</th><th>加入時間</th><th></th></tr></thead><tbody id="memberBody"></tbody></table>
+                </div>
+            </div>
+        </div>
+    </main>
+
+<script src="assets/vendor/supabase.js"></script>
+<script src="assets/config.js"></script>
+<script src="assets/offline-db.js"></script>
+<script src="assets/common.js"></script>
+<script>
+    const esc = PM.esc;
+    const stamp = () => PM.today();
+
+    /* ---------- 分頁 ---------- */
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.onclick = () => {
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById(btn.dataset.tab).classList.add('active');
+        btn.classList.add('active');
+        if (btn.dataset.tab === 'tab-members') renderMembers();
+        if (btn.dataset.tab === 'tab-backup') renderStats();
+    });
+
+    /* ---------- 參數字典 ---------- */
+    function usageCount(key, val) {
+        const projs = PM.getProjects(), reqs = PM.getRequirements();
+        if (key === 'projTypes') return projs.filter(p => p.type === val).length + reqs.filter(r => r.type === val).length;
+        if (key === 'factories') return projs.filter(p => p.factory === val).length + reqs.filter(r => r.factory === val).length + PM.getUsers().filter(u => u.factory === val).length;
+        return projs.reduce((n, p) => n + p.records.filter(r => r.type === val).length, 0) + reqs.reduce((n, r) => n + r.discussions.filter(d => d.type === val).length, 0);
+    }
+
+    let editingTag = null;   // { key, idx }
+
+    function renderDictTags() {
+        const dicts = PM.getDicts();
+        ['projTypes', 'factories', 'recordTypes'].forEach(key => {
+            document.getElementById('tags-' + key).innerHTML = dicts[key].map((v, i) => {
+                if (editingTag && editingTag.key === key && editingTag.idx === i) {
+                    return `<span class="editable-tag editing">
+                        <input type="text" class="tag-rename-input" value="${esc(v)}" data-key="${key}" data-idx="${i}" maxlength="40">
+                        <button class="btn-tag-ok" title="儲存 (Enter)" data-act="ok">✔</button>
+                        <button class="btn-tag-cancel" title="取消 (Esc)" data-act="cancel">✕</button></span>`;
+                }
+                return `<span class="editable-tag">${esc(v)} <small>(${usageCount(key, v)})</small>
+                    <button class="btn-rename-tag edit-only" title="變更名稱" data-key="${key}" data-idx="${i}">✎</button>
+                    <button class="btn-remove-tag edit-only" title="移除" data-key="${key}" data-idx="${i}">×</button></span>`;
+            }).join('');
+        });
+        document.querySelectorAll('.btn-remove-tag').forEach(b => b.onclick = () => removeTag(b.dataset.key, Number(b.dataset.idx)));
+        document.querySelectorAll('.btn-rename-tag').forEach(b => b.onclick = () => { editingTag = { key: b.dataset.key, idx: Number(b.dataset.idx) }; renderDictTags(); });
+        const input = document.querySelector('.tag-rename-input');
+        if (input) {
+            input.focus(); input.select();
+            input.onkeydown = e => {
+                if (e.key === 'Enter') { e.preventDefault(); renameTag(); }
+                if (e.key === 'Escape') { e.stopPropagation(); editingTag = null; renderDictTags(); }
+            };
+            input.parentElement.querySelector('[data-act=ok]').onclick = renameTag;
+            input.parentElement.querySelector('[data-act=cancel]').onclick = () => { editingTag = null; renderDictTags(); };
+        }
+    }
+
+    // 變更名稱：字典與所有使用中的資料（專案、需求、人員、紀錄）一起更新
+    async function renameTag() {
+        const input = document.querySelector('.tag-rename-input');
+        if (!input) return;
+        const key = input.dataset.key, idx = Number(input.dataset.idx);
+        const oldV = PM.getDicts()[key][idx], newV = input.value.trim();
+        if (!newV) { alert('名稱不可空白'); input.focus(); return; }
+        if (newV === oldV) { editingTag = null; renderDictTags(); return; }
+        if (PM.getDicts()[key].includes(newV)) { alert(`「${newV}」已存在，請使用其他名稱`); input.focus(); return; }
+        const n = usageCount(key, oldV);
+        if (n && !confirm(`將「${oldV}」改名為「${newV}」？\n目前有 ${n} 筆資料使用「${oldV}」，會一併改為新名稱。`)) return;
+        editingTag = null;
+        await PM.act(() => PM.api.renameDictValue(key, oldV, newV), `已改名為「${newV}」` + (n ? `，並更新 ${n} 筆資料` : ''));
+        renderDictTags();
+    }
+
+    async function addTag(key) {
+        const input = document.getElementById('in-' + key);
+        const val = input.value.trim();
+        if (!val) return;
+        const dicts = PM.getDicts();
+        if (dicts[key].includes(val)) { PM.toast('此項目已存在', true); return; }
+        dicts[key].push(val);
+        if (await PM.act(() => PM.api.saveDicts(dicts), `已新增「${val}」`)) input.value = '';
+        renderDictTags();
+    }
+    document.querySelectorAll('[data-add]').forEach(b => b.onclick = () => addTag(b.dataset.add));
+    ['projTypes', 'factories', 'recordTypes'].forEach(k => document.getElementById('in-' + k).addEventListener('keydown', e => { if (e.key === 'Enter') addTag(k); }));
+
+    async function removeTag(key, idx) {
+        const dicts = PM.getDicts();
+        const val = dicts[key][idx];
+        if (dicts[key].length <= 1) { alert('至少需保留一個選項！'); return; }
+        const n = usageCount(key, val);
+        if (!confirm(n ? `「${val}」目前仍有 ${n} 筆資料使用中。\n移除後既有資料會保留原值，但新增時將無法再選擇。確定移除？` : `確定移除「${val}」？`)) return;
+        dicts[key].splice(idx, 1);
+        await PM.act(() => PM.api.saveDicts(dicts), '已移除');
+        renderDictTags();
+    }
+
+    /* ---------- 預警規則 ---------- */
+    function renderRules() {
+        const s = PM.getSettings();
+        document.getElementById('set-delayDays').value = s.delayDays;
+        document.getElementById('set-staleDays').value = s.staleDays;
+        document.getElementById('set-delayHighlight').checked = !!s.delayHighlight;
+        document.querySelectorAll('#tab-rules input').forEach(i => i.disabled = !PM.canEdit);
+    }
+    async function saveRules() {
+        const delayDays = parseInt(document.getElementById('set-delayDays').value, 10);
+        const staleDays = parseInt(document.getElementById('set-staleDays').value, 10);
+        if (!(delayDays >= 1 && delayDays <= 60)) { alert('落後天數閥值須介於 1～60 天'); return; }
+        if (!(staleDays >= 3 && staleDays <= 90)) { alert('履歷未更新預警天數須介於 3～90 天'); return; }
+        await PM.act(() => PM.api.saveSettings(Object.assign(PM.getSettings(), { delayDays, staleDays,
+            delayHighlight: document.getElementById('set-delayHighlight').checked })), '預警規則已儲存');
+    }
+    document.getElementById('set-delayHighlight').addEventListener('change', saveRules);
+
+    /* ---------- 報表匯出 ---------- */
+    function exportProjectsSummaryCSV() {
+        const projs = PM.getProjects();
+        if (!projs.length) { alert('目前無專案資料！'); return; }
+        PM.downloadCSV(['專案名稱', '項目類型', '所屬廠區', '專案負責人(PM)', '專案Owner', '起始日期', '結束日期', '進度(%)', '當前狀態', '大項目數', '細項任務數', '最後紀錄日'],
+            projs.map(p => [p.name, p.type, p.factory, p.pm, p.owner, p.start, p.end, p.progress, p.status,
+                p.modules.length, p.modules.reduce((n, m) => n + m.subtasks.length, 0), PM.lastRecordDate(p) || '']),
+            `專案進度總表_${stamp()}.csv`);
+    }
+    function exportTasksCSV() {
+        const settings = PM.getSettings();
+        const rows = [];
+        PM.getProjects().forEach(p => p.modules.forEach(m => m.subtasks.forEach(s =>
+            rows.push([p.name, p.factory, p.status, m.name, m.owner, s.name, s.pm, s.owner, s.start, s.end, s.progress, PM.isDelayed(s, settings) ? '落後' : '']))));
+        if (!rows.length) { alert('目前尚無任務細項資料！'); return; }
+        PM.downloadCSV(['專案名稱', '廠區', '專案狀態', '大項目', '大項目Owner', '細項任務', '負責人', '驗收人', '開始', '結束', '進度(%)', '落後註記'], rows, `全專案任務明細表_${stamp()}.csv`);
+    }
+    function exportAllRecordsCSV() {
+        const rows = [];
+        PM.getProjects().forEach(p => p.records.slice().reverse().forEach(r =>
+            rows.push([p.name, r.date, r.type, r.targetModule, r.internalAttendees, r.externalAttendees, r.detail])));
+        if (!rows.length) { alert('目前各專案尚無履歷紀錄！'); return; }
+        PM.downloadCSV(['專案名稱', '日期', '類別', '針對模塊', '內部與會人員', '外部廠商與會人員', '決議與說明事項'], rows, `全專案執行履歷總表_${stamp()}.csv`);
+    }
+    function exportRequirementsCSV() {
+        const reqs = PM.getRequirements();
+        if (!reqs.length) { alert('目前無需求評估資料！'); return; }
+        PM.downloadCSV(['案件名稱', '工程類型', '所屬廠區', '使用單位', '提出人員', '提出日期', '階段狀態', '現況痛點描述', '預期目標效益', '討論次數', '最近討論日'],
+            reqs.map(r => [r.title, r.type, r.factory, r.dept, r.user, r.createdDate, r.status, r.desc, r.target, r.discussions.length,
+                (r.discussions[0] || {}).date || '']),
+            `項目需求評估總表_${stamp()}.csv`);
+    }
+    function exportUsersCSV() {
+        const users = PM.getUsers();
+        if (!users.length) { alert('目前無人員名冊資料！'); return; }
+        PM.downloadCSV(['身份類別', '單位/廠商名稱', '姓名', '電子郵件', '常駐廠區', '備註說明'],
+            users.map(u => [u.category, u.dept, u.name, u.email, u.factory, u.note]), `專案人員與廠商名冊_${stamp()}.csv`);
+    }
+
+    /* ---------- 備份 / 匯入 ---------- */
+    function renderStats() {
+        const p = PM.getProjects(), r = PM.getRequirements();
+        document.getElementById('dataStats').textContent =
+            `專案 ${p.length} 個、細項 ${p.reduce((n, x) => n + x.modules.reduce((a, m) => a + m.subtasks.length, 0), 0)} 項、履歷 ${p.reduce((n, x) => n + x.records.length, 0)} 筆、需求案件 ${r.length} 件、人員 ${PM.getUsers().length} 位`;
+    }
+    function backupSystemData() {
+        PM.downloadBlob(new Blob([JSON.stringify(PM.exportData(), null, 2)], { type: 'application/json' }), `專案管理系統備份_${stamp()}.json`);
+    }
+
+    async function runImport(data, label) {
+        const logEl = document.getElementById('importLog');
+        logEl.style.display = 'block';
+        logEl.textContent = `▶ 開始匯入：${label}\n`;
+        const log = line => { logEl.textContent += '  ' + line + '\n'; logEl.scrollTop = logEl.scrollHeight; };
+        const stat = await PM.act(() => PM.importData(data, log));
+        if (stat) {
+            logEl.textContent += `✔ 完成：專案 ${stat.projects}、履歷 ${stat.records}、需求 ${stat.reqs}、討論 ${stat.discussions}、人員 ${stat.people}、照片 ${stat.images}` +
+                (stat.skipped ? `（${stat.skipped} 位人員因 Email 已存在而略過）` : '') + '\n';
+            PM.toast('匯入完成');
+        } else logEl.textContent += '✘ 匯入中斷，已完成的部分會保留。請檢查錯誤訊息後重試。\n';
+        renderDictTags(); renderRules(); renderStats();
+    }
+
+    function importFromFile() {
+        const file = document.getElementById('importFileInput').files[0];
+        if (!file) { alert('請先選擇 JSON 檔案！'); return; }
+        const reader = new FileReader();
+        reader.onload = async e => {
+            let data;
+            try { data = JSON.parse(e.target.result); } catch (err) { alert('檔案不是有效的 JSON！'); return; }
+            const keys = ['pm_projects_list', 'pm_requirements_list', 'pm_users_list', 'pm_system_dicts'];
+            if (!keys.some(k => data[k])) { alert('此檔案不是本系統的備份檔！'); return; }
+            const n = (data.pm_projects_list || []).length, m = (data.pm_requirements_list || []).length, u = (data.pm_users_list || []).length;
+            if (!confirm(`即將匯入：專案 ${n} 個、需求 ${m} 件、人員 ${u} 位。\n（備份日期：${data.exportDate || '未知'}）確定？`)) return;
+            await runImport(data, file.name);
+        };
+        reader.readAsText(file);
+    }
+
+    async function importDemo() {
+        if (PM.getProjects().some(p => p.name === PM.DEMO_DATA.pm_projects_list[0].name) &&
+            !confirm('資料庫中似乎已有示範專案，再匯入會產生重複資料。仍要繼續？')) return;
+        if (!confirm('匯入 1 個示範專案、4 件需求評估與 5 位人員？')) return;
+        await runImport(PM.clone(PM.DEMO_DATA), '示範資料');
+    }
+
+    async function wipeAll() {
+        if (!PM.canEdit) return;
+        const mineP = PM.getProjects().filter(p => p.isMine), mineR = PM.getRequirements().filter(r => r.isMine);
+        if (!mineP.length && !mineR.length) { alert('你目前沒有自己擁有的專案或需求評估。'); return; }
+        const word = prompt(`將刪除你擁有的 ${mineP.length} 個專案與 ${mineR.length} 件需求評估（含所有追蹤紀錄與照片），無法復原。\n請輸入「確認清空」以繼續：`);
+        if (word !== '確認清空') return;
+        await PM.act(async () => {
+            const sb = PM.sb;
+            const files = mineP.flatMap(p => [p.imgBefore, p.imgAfter]).filter(x => x && !/^(https?:|data:)/.test(x));
+            for (const t of ['requirements', 'projects']) {
+                const { error } = await sb.from(t).delete().eq('owner_id', PM.user.id);
+                if (error) throw error;
+            }
+            if (files.length) await sb.storage.from(window.PM_CONFIG.IMAGE_BUCKET || 'project-images').remove(files);
+        }, '已刪除你擁有的專案與需求評估');
+        renderDictTags(); renderStats();
+    }
+
+    /* ---------- 成員管理 ---------- */
+    async function renderMembers() {
+        const body = document.getElementById('memberBody');
+        body.innerHTML = '<tr><td colspan="5" class="muted">載入中…</td></tr>';
+        try {
+            const list = await PM.api.listMembers();
+            body.innerHTML = list.map(m => `<tr>
+                <td>${esc(m.email)}${m.email === PM.user.email.toLowerCase() ? ' <span class="muted">(你)</span>' : ''}</td>
+                <td>${esc(m.display_name || '-')}</td>
+                <td><select class="filter-select" data-email="${esc(m.email)}" ${m.email === PM.user.email.toLowerCase() ? 'disabled' : ''}>
+                    ${['admin', 'editor', 'viewer'].map(r => `<option value="${r}" ${r === m.role ? 'selected' : ''}>${PM.ROLE_NAMES[r]}</option>`).join('')}</select></td>
+                <td class="muted">${esc((m.created_at || '').slice(0, 10))}</td>
+                <td>${m.email === PM.user.email.toLowerCase() ? '' : `<button class="btn-action del" data-del="${esc(m.email)}">移除</button>`}</td>
+            </tr>`).join('');
+            body.querySelectorAll('select[data-email]').forEach(s => s.onchange = async () => {
+                const m = list.find(x => x.email === s.dataset.email);
+                await PM.act(() => PM.api.saveMember(Object.assign({}, m, { role: s.value })), '權限已更新');
+                renderMembers();
+            });
+            body.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+                if (!confirm(`確定移除成員 ${b.dataset.del}？對方將無法再看到任何資料。`)) return;
+                await PM.act(() => PM.api.deleteMember(b.dataset.del), '已移除');
+                renderMembers();
+            });
+        } catch (e) { body.innerHTML = `<tr><td colspan="5" class="warn-text">${esc(PM.errMsg(e))}</td></tr>`; }
+    }
+    async function addMember() {
+        const email = document.getElementById('memEmail').value.trim().toLowerCase();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { alert('請輸入正確的 Email'); return; }
+        const ok = await PM.act(() => PM.api.saveMember({ email, role: document.getElementById('memRole').value, display_name: document.getElementById('memName').value.trim() }), '成員已儲存');
+        if (ok) { document.getElementById('memEmail').value = ''; document.getElementById('memName').value = ''; renderMembers(); }
+    }
+
+    PM.boot('settings', () => {
+        if (PM.isAdmin) {
+            document.getElementById('tabMembersBtn').style.display = '';
+        }
+        renderDictTags();
+        renderRules();
+        renderStats();
+    });
+</script>
+</body>
+</html>

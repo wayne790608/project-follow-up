@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>登入 - 專案管理系統</title>
+    <link rel="stylesheet" href="assets/common.css">
+    <style>
+        body { align-items: center; justify-content: center; background: linear-gradient(135deg, #1a202c 0%, #2b6cb0 100%); overflow: auto; }
+        .login-card { background: #fff; border-radius: 14px; box-shadow: 0 20px 50px rgba(0,0,0,.3); width: 400px; max-width: calc(100% - 32px); padding: 34px 32px; }
+        .login-brand { font-size: 22px; font-weight: 800; color: #1a202c; margin-bottom: 4px; }
+        .login-sub { font-size: 13px; color: var(--c-muted); margin-bottom: 22px; }
+        .tabs { display: flex; border-bottom: 2px solid var(--c-border); margin-bottom: 18px; }
+        .tabs button { flex: 1; background: none; border: none; padding: 9px; font-size: 14px; font-weight: 700; color: var(--c-muted); cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px; font-family: inherit; }
+        .tabs button.active { color: var(--c-primary-dark); border-bottom-color: var(--c-primary); }
+        .pane { display: none; }
+        .pane.active { display: block; }
+        .btn-block { width: 100%; padding: 11px; margin-top: 6px; }
+        .msg { font-size: 13px; padding: 10px 12px; border-radius: 6px; margin-bottom: 14px; display: none; line-height: 1.5; }
+        .msg.show { display: block; }
+        .msg.err { background: #fff5f5; color: #c53030; border: 1px solid #feb2b2; }
+        .msg.ok { background: #f0fdf4; color: #22543d; border: 1px solid #9ae6b4; }
+        .link { background: none; border: none; color: var(--c-primary); font-size: 12.5px; cursor: pointer; padding: 0; margin-top: 12px; font-family: inherit; }
+        .hint { font-size: 12px; color: var(--c-muted); margin-top: 16px; line-height: 1.6; border-top: 1px solid #edf2f7; padding-top: 12px; }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <div class="login-brand">⚙️ 專案管理系統</div>
+        <div class="login-sub">請以公司 Email 登入</div>
+
+        <div class="msg" id="msg"></div>
+
+        <div class="tabs" id="tabs">
+            <button class="active" data-pane="paneLogin">登入</button>
+            <button data-pane="paneSignup">首次使用註冊</button>
+        </div>
+
+        <form class="pane active" id="paneLogin">
+            <div class="form-group"><label>Email</label><input type="email" id="loginEmail" autocomplete="username" required></div>
+            <div class="form-group"><label>密碼</label><input type="password" id="loginPwd" autocomplete="current-password" required></div>
+            <button class="btn btn-primary btn-block" type="submit">登入</button>
+            <button class="link" type="button" id="btnForgot">忘記密碼？</button>
+        </form>
+
+        <form class="pane" id="paneSignup">
+            <div class="form-group"><label>Email</label><input type="email" id="suEmail" autocomplete="username" required></div>
+            <div class="form-group"><label>設定密碼（至少 8 碼）</label><input type="password" id="suPwd" minlength="8" autocomplete="new-password" required></div>
+            <div class="form-group"><label>再次輸入密碼</label><input type="password" id="suPwd2" minlength="8" autocomplete="new-password" required></div>
+            <button class="btn btn-primary btn-block" type="submit">註冊帳號</button>
+            <div class="hint">註冊後需由系統管理員將您的 Email 加入成員名單，才能看到資料。</div>
+        </form>
+
+        <form class="pane" id="paneReset">
+            <div class="form-group"><label>設定新密碼（至少 8 碼）</label><input type="password" id="newPwd" minlength="8" autocomplete="new-password" required></div>
+            <button class="btn btn-primary btn-block" type="submit">更新密碼並登入</button>
+        </form>
+    </div>
+
+<script src="assets/vendor/supabase.js"></script>
+<script src="assets/config.js"></script>
+<script src="assets/offline-db.js"></script>
+<script src="assets/common.js"></script>
+<script>
+    const $ = id => document.getElementById(id);
+    const next = (() => {
+        const n = PM.param('next') || 'index.html';
+        return /^[\w\-]+\.html([?#].*)?$/.test(n) ? n : 'index.html';   // 只允許站內頁面，避免被導向外部網站
+    })();
+    const baseUrl = location.href.split(/[?#]/)[0];
+    const recovering = /type=recovery/.test(location.hash + location.search);   // 需在 Supabase 清除網址前先記下
+
+    function msg(text, ok) {
+        const el = $('msg');
+        el.textContent = text;
+        el.className = 'msg show ' + (ok ? 'ok' : 'err');
+    }
+    function showPane(id) {
+        document.querySelectorAll('.pane').forEach(p => p.classList.toggle('active', p.id === id));
+        document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('active', b.dataset.pane === id));
+        $('tabs').style.display = id === 'paneReset' ? 'none' : '';
+    }
+    document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => { $('msg').className = 'msg'; showPane(b.dataset.pane); });
+
+    function translate(e) {
+        const m = (e && e.message) || String(e);
+        if (/Invalid login credentials/i.test(m)) return 'Email 或密碼錯誤';
+        if (/Email not confirmed/i.test(m)) return '此 Email 尚未完成驗證，請至信箱點擊驗證連結';
+        if (/already registered|already been registered/i.test(m)) return '此 Email 已註冊，請直接登入';
+        if (/rate limit/i.test(m)) return '操作過於頻繁，請稍後再試';
+        if (/Password should be/i.test(m)) return '密碼強度不足（至少 8 碼）';
+        if (/Signups not allowed/i.test(m)) return '系統未開放自行註冊，請聯絡管理員建立帳號';
+        return m;
+    }
+    async function withBtn(form, fn) {
+        const btn = form.querySelector('button[type=submit]');
+        btn.disabled = true;
+        try { await fn(); } catch (e) { msg(translate(e)); } finally { btn.disabled = false; }
+    }
+
+    if (!PM.configured || !PM.sb) {
+        msg('尚未設定資料庫連線：請編輯 assets/config.js 設定 OFFLINE: false 並填入 Supabase 的 URL 與 Publishable key（見部署手冊／README.md）。');
+        document.querySelectorAll('form button').forEach(b => b.disabled = true);
+    } else {
+        // 已登入就直接進入；若是從「重設密碼」信件點進來則顯示設定新密碼
+        PM.sb.auth.onAuthStateChange((evt) => {
+            if (evt === 'PASSWORD_RECOVERY') { showPane('paneReset'); msg('請設定新密碼', true); }
+        });
+        if (recovering) { showPane('paneReset'); }
+        PM.sb.auth.getSession().then(({ data }) => {
+            if (data.session && !recovering && !$('paneReset').classList.contains('active')) location.replace(next);
+        });
+
+        $('paneLogin').onsubmit = e => { e.preventDefault(); withBtn(e.target, async () => {
+            const { error } = await PM.sb.auth.signInWithPassword({ email: $('loginEmail').value.trim(), password: $('loginPwd').value });
+            if (error) throw error;
+            location.replace(next);
+        }); };
+
+        $('paneSignup').onsubmit = e => { e.preventDefault(); withBtn(e.target, async () => {
+            if ($('suPwd').value !== $('suPwd2').value) { msg('兩次輸入的密碼不一致'); return; }
+            const { data, error } = await PM.sb.auth.signUp({ email: $('suEmail').value.trim(), password: $('suPwd').value, options: { emailRedirectTo: baseUrl } });
+            if (error) throw error;
+            if (data.session) location.replace(next);
+            else { msg('註冊成功！請到信箱點擊驗證連結後再登入。', true); showPane('paneLogin'); $('loginEmail').value = $('suEmail').value; }
+        }); };
+
+        $('btnForgot').onclick = async () => {
+            const email = $('loginEmail').value.trim();
+            if (!email) { msg('請先在上方輸入 Email'); return; }
+            const { error } = await PM.sb.auth.resetPasswordForEmail(email, { redirectTo: baseUrl });
+            if (error) msg(translate(error)); else msg('已寄出重設密碼信件，請至信箱查收。', true);
+        };
+
+        $('paneReset').onsubmit = e => { e.preventDefault(); withBtn(e.target, async () => {
+            const { error } = await PM.sb.auth.updateUser({ password: $('newPwd').value });
+            if (error) throw error;
+            msg('密碼已更新，正在進入系統…', true);
+            setTimeout(() => location.replace('index.html'), 800);
+        }); };
+    }
+</script>
+</body>
+</html>

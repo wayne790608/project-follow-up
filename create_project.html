@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>新增 / 編輯專案 - 專案管理系統</title>
+    <link rel="stylesheet" href="assets/common.css">
+    <style>
+        .container { max-width: 1100px; margin: 0 auto; background: #fff; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,.06); padding: 30px; }
+        .page-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #edf2f7; padding-bottom: 15px; margin-bottom: 25px; gap: 10px; flex-wrap: wrap; }
+        .page-header h1 { margin: 0; font-size: 22px; color: #1a202c; }
+        .section-title { font-size: 15px; font-weight: bold; color: var(--c-primary-dark); margin-bottom: 15px; display: flex; align-items: center; }
+        .section-title::before { content: ""; display: inline-block; width: 4px; height: 16px; background: var(--c-primary); margin-right: 8px; border-radius: 2px; }
+        .form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px 15px; margin-bottom: 30px; background: #f8fafc; padding: 20px; border-radius: 8px; border: 1px solid var(--c-border); }
+        .form-grid .full { grid-column: span 2; }
+        .from-req-note { background: #faf5ff; border: 1px solid #e9d8fd; color: #553c9e; padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 18px; }
+
+        .module-list { display: flex; flex-direction: column; gap: 20px; margin-bottom: 20px; }
+        .module-card { border: 1px solid #cbd5e0; border-radius: 8px; background: #fff; overflow: hidden; }
+        .module-header { background: #edf2f7; padding: 12px 18px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--c-border); gap: 10px; }
+        .module-header-inputs { display: flex; gap: 12px; flex-grow: 1; align-items: center; flex-wrap: wrap; }
+        .module-header-inputs input { padding: 6px 10px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 14px; }
+        .module-name-input { flex: 2 1 260px; font-weight: bold; }
+        .module-owner-input { flex: 1 1 160px; }
+        .module-prog { font-size: 12px; color: var(--c-muted); white-space: nowrap; }
+        .subtasks-container { padding: 15px 18px; background: #fafafa; overflow-x: auto; }
+        .subtasks-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 10px; min-width: 820px; }
+        .subtasks-table th { text-align: left; padding: 8px; color: var(--c-muted); border-bottom: 1px solid var(--c-border); font-weight: 600; }
+        .subtasks-table td { padding: 6px 8px; border-bottom: 1px solid #edf2f7; }
+        .subtasks-table input { width: 100%; padding: 5px 8px; border: 1px solid var(--c-border); border-radius: 4px; font-size: 12px; font-family: inherit; }
+        .subtasks-table input.invalid { border-color: #e53e3e; background: #fff5f5; }
+        .btn-add-module { width: 100%; padding: 12px; background: #ebf8ff; border: 2px dashed #63b3ed; border-radius: 8px; color: var(--c-primary-dark); font-weight: bold; cursor: pointer; font-family: inherit; }
+        .btn-add-module:hover { background: #bee3f8; }
+        .btn-add-subtask { background: #e2e8f0; border: none; padding: 5px 10px; border-radius: 4px; font-size: 12px; cursor: pointer; font-weight: bold; color: #4a5568; }
+        .footer-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 30px; border-top: 2px solid #edf2f7; padding-top: 20px; }
+        @media (max-width: 760px) { .form-grid { grid-template-columns: 1fr; } .form-grid .full { grid-column: span 1; } .container { padding: 18px; } }
+    </style>
+</head>
+<body>
+    <aside class="sidebar" id="sidebar"></aside>
+
+    <main class="main-wrapper">
+        <div class="container">
+            <div class="page-header">
+                <h1 id="pageTitle">＋ 新增專案項目</h1>
+                <button type="button" class="btn btn-secondary" id="btnTemplate" onclick="loadAGVTemplate()">帶入 AGV+WMS 專案資料範本</button>
+            </div>
+
+            <div id="fromReqNote"></div>
+
+            <div class="section-title">步驟一：設定專案基本資訊</div>
+            <div class="form-grid">
+                <div class="form-group full"><label>專案名稱 <span class="req">*</span></label>
+                    <input type="text" id="projName" placeholder="例如：東莞台威 AGV＋WMS 三期專案"></div>
+                <div class="form-group"><label>專案項目類型 <span class="req">*</span></label><select id="projType"></select></div>
+                <div class="form-group"><label>所屬廠區 <span class="req">*</span></label><select id="projFactory"></select></div>
+                <div class="form-group"><label>專案狀態 <span class="req">*</span></label><select id="projStatus"></select></div>
+                <div class="form-group"><label>&nbsp;</label><div class="muted" style="padding-top:8px;">總進度由下方各細項進度自動平均計算</div></div>
+                <div class="form-group"><label>起始日期 <span class="req">*</span></label><input type="date" id="projStart"></div>
+                <div class="form-group"><label>預計結束日期 <span class="req">*</span></label><input type="date" id="projEnd"></div>
+                <div class="form-group"><label>專案 Owner（最終責任人）</label><input type="text" id="projOwner" list="peopleList" placeholder="例如：待指定（專案處主管）"></div>
+                <div class="form-group"><label>專案負責人（推動執行）<span class="req">*</span></label><input type="text" id="projPM" list="peopleList" placeholder="例如：Sam, Wayne, IT"></div>
+            </div>
+
+            <div class="section-title">步驟二＆三：建立大項目模塊與小項目細項</div>
+            <div class="module-list" id="moduleContainer"></div>
+            <button type="button" class="btn-add-module" onclick="addSubtask(addModule())">＋ 新增大項目模塊</button>
+
+            <div class="footer-actions">
+                <button type="button" class="btn btn-secondary" onclick="history.length > 1 ? history.back() : location.href='project_list.html'">取消</button>
+                <button type="button" class="btn btn-primary" id="btnSave" onclick="saveProject()">確認並建立專案</button>
+            </div>
+        </div>
+    </main>
+
+<script src="assets/vendor/supabase.js"></script>
+<script src="assets/config.js"></script>
+<script src="assets/offline-db.js"></script>
+<script src="assets/common.js"></script>
+<script>
+    const editId = PM.param('id');
+    const fromReqId = PM.param('fromReq');
+    let editing = null;
+
+    function addDays(dateStr, n) {
+        const d = PM.parseDate(dateStr) || new Date();
+        d.setDate(d.getDate() + n);
+        return PM.fmtDate(d);
+    }
+
+    function addModule(mod = {}) {
+        const card = document.createElement('div');
+        card.className = 'module-card';
+        card.dataset.mid = PM.isUuid(mod.id) ? mod.id : PM.newId();
+        card.innerHTML = `
+            <div class="module-header">
+                <div class="module-header-inputs">
+                    <input type="text" class="module-name-input" placeholder="大項目名稱（例：一、硬體到貨與配置）">
+                    <input type="text" class="module-owner-input" list="peopleList" placeholder="大項目負責人（Owner）">
+                    <span class="module-prog"></span>
+                </div>
+                <button type="button" class="btn-icon-del" title="刪除此大項目">×</button>
+            </div>
+            <div class="subtasks-container">
+                <table class="subtasks-table">
+                    <thead><tr>
+                        <th style="width:26%;">細項任務名稱</th><th style="width:13%;">專案負責人</th><th style="width:13%;">Owner 驗收人</th>
+                        <th style="width:15%;">開始時間</th><th style="width:15%;">結束時間</th><th style="width:10%;">進度 %</th><th style="width:4%;"></th>
+                    </tr></thead>
+                    <tbody></tbody>
+                </table>
+                <button type="button" class="btn-add-subtask">＋ 新增小項目細項</button>
+            </div>`;
+        card.querySelector('.module-name-input').value = mod.name || '';
+        card.querySelector('.module-owner-input').value = mod.owner || '';
+        card.querySelector('.module-header .btn-icon-del').onclick = () => {
+            const hasData = card.querySelector('.module-name-input').value.trim() || card.querySelectorAll('.subtask-row').length > 1;
+            if (!hasData || confirm('確定刪除此大項目及其所有細項？（按下「儲存」後才會真正刪除）')) card.remove();
+        };
+        const tbody = card.querySelector('tbody');
+        card.querySelector('.btn-add-subtask').onclick = () => addSubtask(tbody);
+        document.getElementById('moduleContainer').appendChild(card);
+        (mod.subtasks || []).forEach(s => addSubtask(tbody, s));
+        updateModuleProg(card);
+        return tbody;
+    }
+
+    function addSubtask(tbody, task = {}) {
+        const tr = document.createElement('tr');
+        tr.className = 'subtask-row';
+        if (PM.isUuid(task.id)) tr.dataset.tid = task.id;   // 保留細項 ID
+        tr.innerHTML = `
+            <td><input type="text" class="task-name" placeholder="細項名稱"></td>
+            <td><input type="text" class="task-pm" list="peopleList" placeholder="負責人"></td>
+            <td><input type="text" class="task-owner" list="peopleList" placeholder="驗收人"></td>
+            <td><input type="date" class="task-start"></td>
+            <td><input type="date" class="task-end"></td>
+            <td><input type="number" class="task-progress" min="0" max="100" step="5"></td>
+            <td><button type="button" class="btn-icon-del" title="刪除細項">×</button></td>`;
+        const start = task.start || document.getElementById('projStart').value || PM.today();
+        tr.querySelector('.task-name').value = task.name || '';
+        tr.querySelector('.task-pm').value = task.pm || '';
+        tr.querySelector('.task-owner').value = task.owner || '';
+        tr.querySelector('.task-start').value = start;
+        tr.querySelector('.task-end').value = task.end || addDays(start, 7);
+        tr.querySelector('.task-progress').value = task.progress !== undefined ? task.progress : 0;
+        tr.querySelector('.btn-icon-del').onclick = () => { const card = tr.closest('.module-card'); tr.remove(); updateModuleProg(card); };
+        tr.querySelector('.task-progress').oninput = () => updateModuleProg(tr.closest('.module-card'));
+        tbody.appendChild(tr);
+        updateModuleProg(tbody.closest('.module-card'));
+    }
+
+    function updateModuleProg(card) {
+        if (!card) return;
+        const vals = [...card.querySelectorAll('.task-progress')].map(i => Math.min(100, Math.max(0, Number(i.value) || 0)));
+        card.querySelector('.module-prog').textContent = vals.length ? `模塊進度 ${Math.round(vals.reduce((a, b) => a + b, 0) / vals.length)}%` : '';
+    }
+
+    function collectModules() {
+        const errors = [];
+        const modules = [];
+        document.querySelectorAll('.module-card').forEach((card, mi) => {
+            const mName = card.querySelector('.module-name-input').value.trim();
+            const subtasks = [];
+            card.querySelectorAll('.subtask-row').forEach(row => {
+                const name = row.querySelector('.task-name').value.trim();
+                const sIn = row.querySelector('.task-start'), eIn = row.querySelector('.task-end');
+                sIn.classList.remove('invalid'); eIn.classList.remove('invalid');
+                if (!name) return;
+                if (!sIn.value || !eIn.value || eIn.value < sIn.value) {
+                    sIn.classList.add('invalid'); eIn.classList.add('invalid');
+                    errors.push(`細項「${name}」的結束日期不可早於開始日期`);
+                }
+                subtasks.push({
+                    id: row.dataset.tid || null,
+                    name,
+                    pm: row.querySelector('.task-pm').value.trim(),
+                    owner: row.querySelector('.task-owner').value.trim(),
+                    start: sIn.value, end: eIn.value,
+                    progress: Math.min(100, Math.max(0, parseInt(row.querySelector('.task-progress').value, 10) || 0))
+                });
+            });
+            if (!mName && subtasks.length) errors.push(`第 ${mi + 1} 個大項目有細項但未填寫名稱`);
+            if (mName) modules.push({ id: card.dataset.mid, name: mName, owner: card.querySelector('.module-owner-input').value.trim(), subtasks });
+        });
+        return { modules, errors };
+    }
+
+    async function saveProject() {
+        const v = id => document.getElementById(id).value.trim();
+        const data = {
+            name: v('projName'), type: v('projType'), factory: v('projFactory'), status: v('projStatus'),
+            start: v('projStart'), end: v('projEnd'), owner: v('projOwner') || '待指定', pm: v('projPM')
+        };
+        if (!data.name) { alert('請填寫專案名稱！'); return; }
+        if (!data.pm) { alert('請填寫專案負責人！'); return; }
+        if (!data.start || !data.end) { alert('請填寫起始與結束日期！'); return; }
+        if (data.end < data.start) { alert('預計結束日期不可早於起始日期！'); return; }
+
+        const { modules, errors } = collectModules();
+        if (errors.length) { alert('請修正以下問題：\n\n• ' + errors.join('\n• ')); return; }
+        const outRange = modules.flatMap(m => m.subtasks).filter(s => s.start < data.start || s.end > data.end);
+        if (outRange.length && !confirm(`有 ${outRange.length} 個細項的日期超出專案起訖範圍（甘特圖上會被截斷），仍要儲存嗎？`)) return;
+
+        const who = PM.user.email;
+        if (editing) {
+            // 偵測是否有其他人在這段期間修改過（避免互相覆蓋）
+            await PM.reload();
+            const latest = PM.getProject(editing.id);
+            if (!latest) { alert('此專案已被其他人刪除。'); location.href = 'project_list.html'; return; }
+            if (latest.updatedAt !== editing.updatedAt && !confirm('其他成員在您編輯期間已更新過此專案。\n按「確定」以您的版本覆蓋；按「取消」放棄並重新載入。')) { location.reload(); return; }
+            const ok = await PM.act(async () => {
+                await PM.api.saveProject(Object.assign({ id: editing.id }, data, { modules }));
+                if (editing.status !== data.status) await PM.api.addRecord(editing.id, { date: PM.today(), type: '系統紀錄', targetModule: '全專案整體',
+                    detail: `專案狀態由「${editing.status}」變更為「${data.status}」（${who}）` });
+            });
+            if (!ok) return;
+            alert(`專案「${data.name}」已更新！`);
+        } else {
+            const id = PM.newId();
+            const ok = await PM.act(async () => {
+                await PM.api.saveProject(Object.assign({ id, hiddenModules: [], sourceRequirementId: fromReqId }, data, { modules }));
+                await PM.api.addRecord(id, { date: PM.today(), type: '系統紀錄', targetModule: '全專案整體', internalAttendees: data.pm,
+                    detail: (fromReqId ? '由項目需求評估案件轉為正式專案' : '專案建立') + `（${who}）` });
+                if (fromReqId) await PM.api.patchRequirement(fromReqId, { status: '已轉專案', linkedProjectId: id });
+            });
+            if (!ok) return;
+            alert(`專案「${data.name}」已成功建立！`);
+        }
+        location.href = 'project_list.html';
+    }
+
+    function loadAGVTemplate() {
+        const hasContent = document.getElementById('projName').value.trim() ||
+            [...document.querySelectorAll('.task-name, .module-name-input')].some(i => i.value.trim());
+        if (hasContent && !confirm('帶入範本會覆蓋目前已填寫的內容，確定嗎？')) return;
+        const tpl = PM.clone(PM.DEMO_DATA.pm_projects_list[0]);
+        fillForm(tpl);
+        document.getElementById('moduleContainer').innerHTML = '';
+        tpl.modules.forEach(m => { m.id = null; m.subtasks.forEach(t => { t.id = null; }); addModule(m); });
+    }
+
+    function fillForm(p) {
+        const dicts = PM.getDicts();
+        document.getElementById('projName').value = p.name || '';
+        PM.fillSelect('projType', dicts.projTypes, p.type || dicts.projTypes[0]);
+        PM.fillSelect('projFactory', dicts.factories, p.factory || dicts.factories[0]);
+        PM.fillSelect('projStatus', PM.PROJECT_STATUSES, p.status || '進行中');
+        document.getElementById('projStart').value = p.start || '';
+        document.getElementById('projEnd').value = p.end || '';
+        document.getElementById('projOwner').value = p.owner || '';
+        document.getElementById('projPM').value = p.pm || '';
+    }
+
+    PM.boot('project_list', () => {
+        if (!PM.canEdit) { alert('您的帳號為唯讀權限，無法新增或編輯專案。'); location.replace('project_list.html'); return; }
+        PM.injectPeopleDatalist();
+        if (editId) {
+            editing = PM.getProject(editId);
+            if (!editing) { alert('找不到此專案，將返回列表。'); location.replace('project_list.html'); return; }
+            if (!PM.isOwner(editing)) { alert('這是其他成員擁有的專案，只有擁有者能修改內容。\n你可以在列表或首頁新增追蹤紀錄。'); location.replace('project_list.html?open=' + encodeURIComponent(editId)); return; }
+            document.title = '編輯專案 - 專案管理系統';
+            document.getElementById('pageTitle').textContent = '✏️ 編輯專案項目';
+            document.getElementById('btnSave').textContent = '儲存變更';
+            document.getElementById('btnTemplate').style.display = 'none';
+            fillForm(editing);
+            editing.modules.forEach(m => addModule(m));
+            if (!editing.modules.length) addSubtask(addModule());
+        } else {
+            const start = PM.today();
+            fillForm({ status: '進行中', start, end: addDays(start, 180) });
+            if (fromReqId) {
+                const r = PM.getRequirements().find(x => x.id === fromReqId);
+                if (r && !PM.isOwner(r)) { alert('只有需求案件的擁有者可以轉為正式專案。'); location.replace('requirements.html?id=' + encodeURIComponent(fromReqId)); return; }
+                if (r) {
+                    fillForm({ name: r.title, type: r.type, factory: r.factory, status: '進行中', start, end: addDays(start, 180), pm: r.user });
+                    document.getElementById('fromReqNote').innerHTML =
+                        `<div class="from-req-note">🚀 由需求評估案件「<b>${PM.esc(r.title)}</b>」轉立專案。建立後該案件狀態會自動改為「已轉專案」。</div>`;
+                }
+            }
+            addSubtask(addModule());
+        }
+    });
+</script>
+</body>
+</html>

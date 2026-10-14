@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>廠區管理 - 專案管理系統</title>
+    <link rel="stylesheet" href="assets/common.css">
+    <style>
+        .factory-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 460px), 1fr)); gap: 24px; }
+        .factory-card { background: #fff; border-radius: 12px; border: 1px solid var(--c-border); box-shadow: 0 4px 15px rgba(0,0,0,.04); overflow: hidden; }
+        .factory-card-header { padding: 18px 22px; background: #f8fafc; border-bottom: 1px solid #edf2f7; display: flex; justify-content: space-between; align-items: center; }
+        .factory-name { font-size: 18px; font-weight: 700; color: #1a365d; }
+        .factory-body { padding: 20px 22px; }
+        .summary-stats { display: flex; gap: 10px; margin-bottom: 18px; flex-wrap: wrap; }
+        .stat-pill { background: #edf2f7; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: bold; color: #4a5568; }
+        .stat-pill.ing { background: #ebf8ff; color: var(--c-primary-dark); }
+        .stat-pill.plan { background: #fefcbf; color: #744210; }
+        .stat-pill.done { background: #f0fdf4; color: #22543d; }
+        .stat-pill.req { background: #faf5ff; color: #553c9e; }
+        .section-label { font-size: 13px; font-weight: 700; color: var(--c-muted); margin: 14px 0 8px; }
+        .type-tags-wrap { display: flex; gap: 8px; flex-wrap: wrap; }
+        .type-tag-count { padding: 4px 10px; border-radius: 16px; font-size: 12px; font-weight: 600; border: 1px solid var(--c-border); background: #f7fafc; color: var(--c-primary-dark); }
+        .mini-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+        .mini-item { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 13px; padding: 7px 10px; border-radius: 6px; background: #fafafa; text-decoration: none; color: inherit; border: 1px solid transparent; }
+        .mini-item:hover { border-color: #bee3f8; background: #f0f7ff; }
+        .mini-name { font-weight: 600; color: #2d3748; }
+        .mini-sub { font-size: 11px; color: var(--c-muted); margin-left: 6px; }
+        .divider { border-top: 1px dashed var(--c-border); margin-top: 14px; }
+    </style>
+</head>
+<body>
+    <aside class="sidebar" id="sidebar"></aside>
+
+    <main class="main-wrapper">
+        <div class="top-navbar">
+            <div class="nav-title">廠區管理 - 各廠專案與項目類型進度總覽</div>
+            <a class="btn btn-secondary edit-only" href="settings.html">⚙️ 管理廠區清單</a>
+        </div>
+        <div class="factory-grid" id="factoryContainer"></div>
+    </main>
+
+<script src="assets/vendor/supabase.js"></script>
+<script src="assets/config.js"></script>
+<script src="assets/offline-db.js"></script>
+<script src="assets/common.js"></script>
+<script>
+    const esc = PM.esc;
+
+    function renderFactoryGrid() {
+        const projs = PM.getProjects();
+        const reqs = PM.getRequirements();
+        const users = PM.getUsers();
+        const dicts = PM.getDicts();
+        // 廠區以字典為主，並補上資料中出現但已從字典移除的廠區，避免資料「消失」
+        const factories = dicts.factories.slice();
+        [...projs, ...reqs].forEach(x => { if (x.factory && !factories.includes(x.factory)) factories.push(x.factory); });
+
+        document.getElementById('factoryContainer').innerHTML = factories.map(fact => {
+            const fProjs = projs.filter(p => p.factory === fact);
+            const fReqs = reqs.filter(r => r.factory === fact && r.status !== '已轉專案' && r.status !== '暫緩／不成案');
+            const cnt = s => fProjs.filter(p => p.status === s).length;
+            const staff = users.filter(u => u.category !== '外部廠商' && u.factory === fact).length;
+
+            const types = dicts.projTypes.slice();
+            fProjs.forEach(p => { if (!types.includes(p.type)) types.push(p.type); });
+            const typeTags = types.map(t => {
+                const n = fProjs.filter(p => p.type === t).length;
+                return n ? `<span class="type-tag-count">${esc(t)}：<strong>${n}</strong> 項</span>` : '';
+            }).join('') || '<span class="muted">目前無專案項目</span>';
+
+            const order = { '進行中': 0, '評估中': 1, '專案完成': 2, '專案終止': 3 };
+            const projList = fProjs.sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9)).map(p => `
+                <li><a class="mini-item" href="index.html#${encodeURIComponent(p.id)}">
+                    <div><span class="mini-name">${esc(p.name)}</span><span class="mini-sub">(${esc(p.type)}｜${p.progress}%)</span></div>
+                    ${PM.statusBadge(p.status)}</a></li>`).join('') || '<li class="muted" style="text-align:center;">此廠區尚無專案</li>';
+
+            const reqList = fReqs.map(r => `
+                <li><a class="mini-item" href="requirements.html?id=${encodeURIComponent(r.id)}">
+                    <div><span class="mini-name">${esc(r.title)}</span><span class="mini-sub">(${esc(r.type)})</span></div>
+                    ${PM.statusBadge(r.status)}</a></li>`).join('') || '<li class="muted" style="text-align:center;">此廠區目前無評估中的需求案件</li>';
+
+            return `<div class="factory-card">
+                <div class="factory-card-header">
+                    <div class="factory-name">🏭 ${esc(fact)}${dicts.factories.includes(fact) ? '' : ' <span class="warn-text">（已不在廠區字典中）</span>'}</div>
+                    <div class="muted">專案總數：<strong>${fProjs.length}</strong>｜常駐人員：<strong>${staff}</strong></div>
+                </div>
+                <div class="factory-body">
+                    <div class="summary-stats">
+                        <div class="stat-pill ing">進行中專案：${cnt('進行中')}</div>
+                        <div class="stat-pill plan">評估中專案：${cnt('評估中')}</div>
+                        <div class="stat-pill done">已完成：${cnt('專案完成')}</div>
+                        <div class="stat-pill req">需求評估案件：${fReqs.length}</div>
+                    </div>
+                    <div class="section-label">專案項目類型分佈：</div>
+                    <div class="type-tags-wrap">${typeTags}</div>
+                    <div class="divider"></div>
+                    <div class="section-label">專案項目清單：</div>
+                    <ul class="mini-list">${projList}</ul>
+                    <div class="section-label">需求評估中案件：</div>
+                    <ul class="mini-list">${reqList}</ul>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    PM.boot("factory_mgmt", renderFactoryGrid);
+</script>
+</body>
+</html>
