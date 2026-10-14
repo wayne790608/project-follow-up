@@ -9,13 +9,18 @@
 (function () {
     'use strict';
     const PM = {};
-    PM.VERSION = 'v4.0.0';
+    PM.VERSION = 'v4.1.0';
     const CFG = window.PM_CONFIG || {};
     const BUCKET = CFG.IMAGE_BUCKET || 'project-images';
 
     PM.PROJECT_STATUSES = ['評估中', '進行中', '專案完成', '專案終止'];
     PM.REQ_STATUSES = ['需求討論中', '現場場勘評估', '方案確認成案', '已轉專案', '暫緩／不成案'];
     PM.ROLE_NAMES = { admin: '管理員', editor: '編輯者', viewer: '唯讀' };
+    // 帳號登入：帳號在 Supabase Auth 內部對應「帳號@pm.local」（不寄信，與 schema.sql 的 pm_login_domain() 一致）
+    PM.LOGIN_DOMAIN = 'pm.local';
+    PM.USERNAME_RE = /^[a-z0-9][a-z0-9._-]{2,31}$/;
+    PM.toLoginEmail = u => { u = String(u || '').trim().toLowerCase(); return u.includes('@') ? u : `${u}@${PM.LOGIN_DOMAIN}`; };
+    PM.usernameOf = email => { const e = String(email || '').toLowerCase(); return e.endsWith('@' + PM.LOGIN_DOMAIN) ? e.slice(0, -(PM.LOGIN_DOMAIN.length + 1)) : e; };
     PM.DEFAULT_DICTS = {
         projTypes: ['AMR搬運', '手臂', '系統', '設備改造', '影像辨識'],
         factories: ['東莞廠', '越南一廠', '越南二廠', '台灣廠'],
@@ -190,8 +195,9 @@
     PM.memberName = email => {
         if (!email) return '—';
         const m = cache.members.find(x => x.email === String(email).toLowerCase());
-        return (m && m.name) || String(email).split('@')[0];
+        return (m && m.name) || PM.usernameOf(email);
     };
+    PM.memberLabel = email => { const n = PM.memberName(email), u = PM.usernameOf(email); return n === u ? u : `${n}（${u}）`; };
     PM.isOwner = item => !!(item && PM.canEdit && PM.user && item.ownerId === PM.user.id);   // 可修改專案／需求本身
     PM.canTrack = item => !!(item && PM.canEdit);                                             // 看得到就能新增追蹤（唯讀成員除外）
     PM.isAuthor = entry => !!(entry && PM.canEdit && PM.user && entry.createdBy === PM.user.id); // 只能改自己寫的追蹤
@@ -325,6 +331,12 @@
 
         // 成員管理（僅管理員）
         listMembers: async () => run(PM.sb.from('app_members').select('*').order('created_at')),
+        // 帳號管理（僅管理員；資料庫函式會再檢查一次）
+        createUser: async (username, password, role, displayName) => run(PM.sb.rpc('pm_create_user',
+            { p_username: username, p_password: password, p_role: role, p_display_name: displayName || null })),
+        setUserPassword: async (username, password) => run(PM.sb.rpc('pm_set_password', { p_username: username, p_password: password })),
+        deleteUser: async (username, transferTo) => run(PM.sb.rpc('pm_delete_user', { p_username: username, p_transfer_to: transferTo || null })),
+        changeMyPassword: async password => { const { error } = await PM.sb.auth.updateUser({ password }); if (error) throw error; },
         saveMember: async m => run(PM.sb.from('app_members').upsert({ email: m.email.trim().toLowerCase(), role: m.role, display_name: m.display_name || null })),
         deleteMember: async email => run(PM.sb.from('app_members').delete().eq('email', email))
     };
@@ -340,6 +352,8 @@
     PM.errMsg = e => {
         const m = (e && (e.message || e.error_description)) || String(e);
         if (/只有撰寫人/.test(m)) return '只有撰寫人可以修改或刪除自己的追蹤紀錄';
+        if (/Password should be|weak password/i.test(m)) return '密碼強度不足（至少 8 碼）';
+        if (/same_password|should be different/i.test(m)) return '新密碼不能與舊密碼相同';
         if (/project_shares_pkey|requirement_shares_pkey/.test(m)) return '已經分享給這位成員了';
         if (/row-level security|permission denied|violates row-level/i.test(m)) return '權限不足（只有擁有者能修改專案／需求本身；追蹤紀錄只有撰寫人能修改）';
         if (/people_email_uniq|duplicate key.*email/i.test(m)) return '此 Email 已存在於名冊中';
@@ -517,14 +531,14 @@
                 <div class="share-add">
                     <select id="shareSelect" class="filter-select" style="flex:1">
                         <option value="">選擇成員…</option>
-                        ${candidates.map(m => `<option value="${PM.esc(m.email)}">${PM.esc(m.name || m.email.split('@')[0])}（${PM.esc(m.email)}）</option>`).join('')}
+                        ${candidates.map(m => `<option value="${PM.esc(m.email)}">${PM.esc(PM.memberLabel(m.email))}</option>`).join('')}
                     </select>
                     <button type="button" class="btn btn-primary" id="shareAddBtn">＋ 分享</button>
                 </div>
                 ${candidates.length ? '' : '<div class="muted" style="margin-top:6px">成員名單中已沒有可分享的人。新同事需先由管理員加入「系統設定 → 成員與權限」。</div>'}
                 <div class="share-list-title">目前分享給（${cur.shares.length} 人）</div>
                 <div class="share-list">${cur.shares.length ? cur.shares.map(e => `
-                    <div class="share-row"><span>👤 <b>${PM.esc(PM.memberName(e))}</b> <span class="muted">${PM.esc(e)}</span></span>
+                    <div class="share-row"><span>👤 <b>${PM.esc(PM.memberName(e))}</b> <span class="muted">${PM.esc(PM.usernameOf(e))}</span></span>
                         <button type="button" class="btn-action del" data-email="${PM.esc(e)}">取消分享</button></div>`).join('')
                     : '<div class="muted" style="padding:10px 0">尚未分享給任何人，目前只有你（與管理員）看得到。</div>'}</div>
                 <div class="modal-actions"><button type="button" class="btn btn-secondary" id="shareClose">完成</button></div>`;
@@ -541,6 +555,36 @@
         };
         render();
         PM.openModal('shareModal');
+    };
+
+    /* ---------- 修改自己的密碼 ---------- */
+    PM.changePasswordDialog = () => {
+        let el = document.getElementById('pwdModal');
+        if (!el) {
+            el = document.createElement('div');
+            el.className = 'modal-overlay';
+            el.id = 'pwdModal';
+            el.innerHTML = `<div class="modal-box" style="width:400px">
+                <div class="modal-title">🔑 修改我的密碼</div>
+                <div class="form-group"><label>新密碼（至少 8 碼）</label><input type="password" id="pwdNew1" autocomplete="new-password"></div>
+                <div class="form-group"><label>再輸入一次</label><input type="password" id="pwdNew2" autocomplete="new-password"></div>
+                <div class="modal-actions"><button type="button" class="btn btn-secondary" id="pwdCancel">取消</button>
+                    <button type="button" class="btn btn-primary" id="pwdSave">更新密碼</button></div></div>`;
+            document.body.appendChild(el);
+            el.querySelector('#pwdCancel').onclick = () => PM.closeModal('pwdModal');
+            el.querySelector('#pwdSave').onclick = async () => {
+                const a = el.querySelector('#pwdNew1').value, b = el.querySelector('#pwdNew2').value;
+                if (a.length < 8) { alert('密碼至少 8 碼'); return; }
+                if (a !== b) { alert('兩次輸入的密碼不一致'); return; }
+                PM.setBusy(true);
+                try { await PM.api.changeMyPassword(a); PM.closeModal('pwdModal'); PM.toast('密碼已更新，下次請用新密碼登入'); }
+                catch (e) { PM.toast('更新失敗：' + PM.errMsg(e), true); }
+                finally { PM.setBusy(false); }
+            };
+        }
+        el.querySelector('#pwdNew1').value = ''; el.querySelector('#pwdNew2').value = '';
+        PM.openModal('pwdModal');
+        el.querySelector('#pwdNew1').focus();
     };
 
     PM.toast = (msg, isError) => {
@@ -783,12 +827,13 @@
                     <span class="menu-icon">${m.icon}</span><span class="menu-text">${m.text}</span></a></li>`).join('')}
             </ul>
             <div class="sidebar-footer">
-                <div class="sidebar-user" title="${PM.esc(email)}">👤 ${PM.esc(email)}<span class="role">${PM.ROLE_NAMES[PM.role] || ''}</span></div>
+                <div class="sidebar-user" title="帳號：${PM.esc(PM.usernameOf(email))}">👤 ${PM.esc(PM.memberLabel(email))}<span class="role">${PM.ROLE_NAMES[PM.role] || ''}</span></div>
                 <div>版本：${PM.VERSION}｜${PM.offline ? '<b style="color:#f6ad55">離線測試模式</b>' : '雲端資料庫'}</div>
                 ${PM.offline ? `<div class="offline-switch"><label>🧪 切換測試身分</label>
-                        <select onchange="PM.switchOfflineUser(this.value)">${window.PMOffline.users.map(u => `<option value="${u.email}" ${u.email === email ? 'selected' : ''}>${PM.esc(u.name)}</option>`).join('')}</select></div>
+                        <select onchange="PM.switchOfflineUser(this.value)">${window.PMOffline.listUsers().map(u => `<option value="${PM.esc(u.email)}" ${u.email === email ? 'selected' : ''}>${PM.esc(u.name)}</option>`).join('')}</select></div>
+                        <button class="btn-logout" type="button" onclick="PM.changePasswordDialog()">🔑 修改密碼</button>
                         <button class="btn-logout" type="button" onclick="PM.resetOffline()">重置測試資料</button>`
-                             : '<button class="btn-logout" type="button" onclick="PM.logout()">登出</button>'}
+                             : '<button class="btn-logout" type="button" onclick="PM.changePasswordDialog()">🔑 修改密碼</button> <button class="btn-logout" type="button" onclick="PM.logout()">登出</button>'}
             </div>`;
     };
     // 側邊欄收合狀態屬於個人介面偏好，仍記在瀏覽器（不影響資料）
@@ -813,14 +858,14 @@
     async function seedOfflineDemo() {
         const O = window.PMOffline, back = PM.user;
         const as = async email => { O.setUser(email, false); const u = O.current(); PM.user = { id: u.id, email: u.email }; await PM.reload(); };
-        await as('sam@local');
+        await as(PM.toLoginEmail('sam'));
         await PM.importData(PM.clone(PM.DEMO_DATA));
         await PM.reload();
         const samProj = cache.projects.find(p => p.isMine);
         const samReq = cache.reqs.find(r => /地牛/.test(r.title));
-        if (samProj) await PM.api.addShare('project', samProj.id, 'wayne@local');
-        if (samReq) await PM.api.addShare('requirement', samReq.id, 'wayne@local');
-        await as('wayne@local');
+        if (samProj) await PM.api.addShare('project', samProj.id, PM.toLoginEmail('wayne'));
+        if (samReq) await PM.api.addShare('requirement', samReq.id, PM.toLoginEmail('wayne'));
+        await as(PM.toLoginEmail('wayne'));
         const wid = PM.newId();
         await PM.api.saveProject({ id: wid, name: 'Wayne：越南一廠成型課手臂導入', type: '手臂', factory: '越南一廠', status: '評估中',
             start: '2026-12-01', end: '2027-04-30', owner: '廠長', pm: 'Wayne', hiddenModules: [],
@@ -863,16 +908,16 @@
             PM.user = session.user;
             PM.role = await run(PM.sb.rpc('my_role'));
             if (!PM.role) {
-                PM.showError('帳號尚未開通', `您已登入為 <b>${PM.esc(PM.user.email)}</b>，但此帳號尚未被加入系統成員名單。<br>請聯絡系統管理員到「系統設定 → 成員與權限」新增您的 Email。<br><br><button class="btn btn-secondary" onclick="PM.logout()">登出並切換帳號</button>`);
+                PM.showError('帳號尚未開通', `您已登入為 <b>${PM.esc(PM.usernameOf(PM.user.email))}</b>，但此帳號不在系統成員名單中（可能已被管理員移除）。<br>請聯絡系統管理員到「系統設定 → 帳號與權限」處理。<br><br><button class="btn btn-secondary" onclick="PM.logout()">登出並切換帳號</button>`);
                 return;
             }
             // 離線模式第一次開啟：自動載入示範資料
             if (PM.offline) {
                 let seeded = false;
-                try { seeded = localStorage.getItem('pm_offline_seeded_v4') === '1'; } catch (e) {}
+                try { seeded = localStorage.getItem('pm_offline_seeded_v41') === '1'; } catch (e) {}
                 if (!seeded) {
                     await seedOfflineDemo();
-                    try { localStorage.setItem('pm_offline_seeded_v4', '1'); } catch (e) {}
+                    try { localStorage.setItem('pm_offline_seeded_v41', '1'); } catch (e) {}
                 }
                 showOfflineBanner();
             }

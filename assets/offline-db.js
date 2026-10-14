@@ -10,21 +10,23 @@
    ========================================================= */
 (function () {
     'use strict';
-    const DB_KEY = 'pm_offline_db_v4';
-    const IMG_KEY = 'pm_offline_images_v4';
+    const DB_KEY = 'pm_offline_db_v41';
+    const IMG_KEY = 'pm_offline_images_v41';
     const USER_KEY = 'pm_offline_user';
 
-    // 測試身分
-    const USERS = [
-        { id: '00000000-0000-4000-8000-0000000000a1', email: 'sam@local', name: 'Sam（專案擁有者）', role: 'editor' },
-        { id: '00000000-0000-4000-8000-0000000000a2', email: 'wayne@local', name: 'Wayne（被分享者）', role: 'editor' },
-        { id: '00000000-0000-4000-8000-0000000000a3', email: 'boss@local', name: '王經理（管理員）', role: 'admin' },
-        { id: '00000000-0000-4000-8000-0000000000a4', email: 'guest@local', name: '訪客（唯讀）', role: 'viewer' }
+    // 測試帳號（密碼皆為 test1234）；管理員在「系統設定 → 帳號與權限」新增的帳號也會出現在左下角切換清單
+    const DOMAIN = 'pm.local';
+    const SEED_USERS = [
+        { id: '00000000-0000-4000-8000-0000000000a1', username: 'sam', name: 'Sam', note: '專案擁有者', role: 'editor' },
+        { id: '00000000-0000-4000-8000-0000000000a2', username: 'wayne', name: 'Wayne', note: '被分享者', role: 'editor' },
+        { id: '00000000-0000-4000-8000-0000000000a3', username: 'boss', name: '王經理', note: '管理員', role: 'admin' },
+        { id: '00000000-0000-4000-8000-0000000000a4', username: 'guest', name: '訪客', note: '唯讀', role: 'viewer' }
     ];
-    let current = (() => { try { return USERS.find(u => u.email === localStorage.getItem(USER_KEY)) || USERS[0]; } catch (e) { return USERS[0]; } })();
+    const emailOf = u => `${u}@${DOMAIN}`;
+    let current = null;
     const me = () => current;
 
-    const TABLES = ['app_members', 'app_settings', 'people', 'projects', 'project_modules', 'project_tasks', 'project_records',
+    const TABLES = ['auth_users', 'app_members', 'app_settings', 'people', 'projects', 'project_modules', 'project_tasks', 'project_records',
         'project_shares', 'requirements', 'requirement_discussions', 'requirement_shares'];
     const PK = { app_settings: ['key'], app_members: ['email'], project_shares: ['project_id', 'email'], requirement_shares: ['requirement_id', 'email'] };
     const pkOf = t => PK[t] || ['id'];
@@ -61,7 +63,10 @@
     function freshDb() {
         const db = {};
         TABLES.forEach(t => { db[t] = []; });
-        USERS.forEach(u => db.app_members.push({ email: u.email, role: u.role, display_name: u.name.replace(/（.*）/, ''), created_at: now() }));
+        SEED_USERS.forEach(u => {
+            db.auth_users.push({ id: u.id, email: emailOf(u.username), password: 'test1234', note: u.note, created_at: now() });
+            db.app_members.push({ email: emailOf(u.username), role: u.role, display_name: u.name, created_at: now() });
+        });
         db.app_settings.push(
             { key: 'dicts', value: { projTypes: ['AMR搬運', '手臂', '系統', '設備改造', '影像辨識'], factories: ['東莞廠', '越南一廠', '越南二廠', '台灣廠'],
                 recordTypes: ['當面會議', '線上會議', '現場場勘', '資料審查整理', '方案討論變動', '異常狀況'] }, updated_at: now() },
@@ -74,6 +79,8 @@
         return freshDb();
     }
     let DB = load();
+    const pickUser = email => DB.auth_users.find(u => u.email === email) || DB.auth_users[0];
+    current = (() => { try { return pickUser(localStorage.getItem(USER_KEY)); } catch (e) { return DB.auth_users[0]; } })();
     function persist() {
         try { localStorage.setItem(DB_KEY, JSON.stringify(DB)); }
         catch (e) { throw err('瀏覽器儲存空間不足（離線模式約 5MB 上限，請減少照片）'); }
@@ -98,6 +105,7 @@
     const modProject = mid => { const m = DB.project_modules.find(x => x.id === mid); return m ? m.project_id : null; };
 
     const POLICY = {
+        auth_users: { select: () => false, insert: () => false, update: () => false, delete: () => false },
         app_members: { select: () => isMember(), insert: () => isAdmin(), update: () => isAdmin(), delete: () => isAdmin() },
         app_settings: { select: () => isMember(), insert: canEdit, update: canEdit, delete: canEdit },
         people: { select: () => isMember(), insert: canEdit, update: canEdit, delete: canEdit },
@@ -300,12 +308,61 @@
         return pid;
     }
 
+    /* ---------------- 帳號管理（與 schema.sql 的 pm_* 函式相同規則） ---------------- */
+    function userAdmin(fn, a) {
+        if (!isAdmin()) throw err('權限不足：只有管理員可以管理帳號', '42501');
+        const uname = String(a.p_username || '').trim().toLowerCase();
+        if (!/^[a-z0-9][a-z0-9._-]{2,31}$/.test(uname)) throw err('帳號格式不符：3～32 個英文小寫、數字或 . _ -，且須以英數字開頭', '22023');
+        const email = emailOf(uname);
+        const user = DB.auth_users.find(u => u.email === email);
+        if (fn === 'pm_create_user') {
+            if ((a.p_password || '').length < 8) throw err('密碼至少 8 碼', '22023');
+            if (!['admin', 'editor', 'viewer'].includes(a.p_role)) throw err('權限只能是 admin / editor / viewer', '22023');
+            if (user) throw err(`帳號「${uname}」已存在`, '23505');
+            const id = uuid();
+            DB.auth_users.push({ id, email, password: a.p_password, created_at: now() });
+            DB.app_members = DB.app_members.filter(m => m.email !== email);
+            DB.app_members.push({ email, role: a.p_role, display_name: (a.p_display_name || '').trim() || null, created_at: now() });
+            return id;
+        }
+        if (fn === 'pm_set_password') {
+            if ((a.p_password || '').length < 8) throw err('密碼至少 8 碼', '22023');
+            if (!user) throw err(`找不到帳號「${uname}」`, 'P0002');
+            user.password = a.p_password;
+            return null;
+        }
+        if (fn === 'pm_delete_user') {
+            if (email === me().email) throw err('不能刪除自己的帳號', '22023');
+            const mem = DB.app_members.find(m => m.email === email);
+            if (mem && mem.role === 'admin' && DB.app_members.filter(m => m.role === 'admin').length <= 1) throw err('不能刪除最後一位管理員', '22023');
+            const to = String(a.p_transfer_to || '').trim().toLowerCase();
+            if (to && user) {
+                const target = DB.auth_users.find(u => u.email === emailOf(to));
+                if (!target) throw err(`找不到要移轉的帳號「${to}」`, 'P0002');
+                DB.projects.forEach(p => { if (p.owner_id === user.id) { p.owner_id = target.id; p.owner_email = target.email; } });
+                DB.requirements.forEach(r => { if (r.owner_id === user.id) { r.owner_id = target.id; r.owner_email = target.email; } });
+                DB.project_shares = DB.project_shares.filter(s2 => !(s2.email === target.email && (proj(s2.project_id) || {}).owner_id === target.id));
+                DB.requirement_shares = DB.requirement_shares.filter(s2 => !(s2.email === target.email && (reqOf(s2.requirement_id) || {}).owner_id === target.id));
+            }
+            DB.project_shares = DB.project_shares.filter(s2 => s2.email !== email);
+            DB.requirement_shares = DB.requirement_shares.filter(s2 => s2.email !== email);
+            DB.app_members = DB.app_members.filter(m => m.email !== email);
+            DB.auth_users = DB.auth_users.filter(u => u.email !== email);
+            return null;
+        }
+    }
+
     function rpc(fn, args) {
         return Promise.resolve().then(() => {
             if (fn === 'my_role') return { data: role(), error: null };
             if (fn === 'is_member') return { data: isMember(), error: null };
             if (fn === 'can_edit') return { data: canEdit(), error: null };
             if (fn === 'is_admin') return { data: isAdmin(), error: null };
+            if (/^pm_(create_user|set_password|delete_user)$/.test(fn)) {
+                const snapshot = JSON.stringify(DB);
+                try { const r = userAdmin(fn, args); persist(); return { data: r, error: null }; }
+                catch (e) { DB = JSON.parse(snapshot); return { data: null, error: e && e.message ? e : err(String(e)) }; }
+            }
             if (fn === 'save_project') {
                 const snapshot = JSON.stringify(DB);
                 try { const id = saveProject(args.p); persist(); return { data: id, error: null }; }
@@ -340,27 +397,46 @@
         getSession: async () => ({ data: { session: session() }, error: null }),
         getUser: async () => ({ data: { user: userObj() }, error: null }),
         onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
-        signInWithPassword: async () => ({ data: { session: session(), user: userObj() }, error: null }),
+        signInWithPassword: async ({ email, password }) => {
+            const u = DB.auth_users.find(x => x.email === String(email || '').toLowerCase());
+            if (!u || u.password !== password) return { data: { session: null, user: null }, error: { message: 'Invalid login credentials' } };
+            current = u; try { localStorage.setItem(USER_KEY, u.email); } catch (e) {}
+            return { data: { session: session(), user: userObj() }, error: null };
+        },
         signUp: async () => ({ data: { session: session(), user: userObj() }, error: null }),
         signOut: async () => ({ error: null }),
         resetPasswordForEmail: async () => ({ data: {}, error: null }),
-        updateUser: async () => ({ data: { user: userObj() }, error: null })
+        updateUser: async ({ password } = {}) => {
+            if (password !== undefined) {
+                if (String(password).length < 8) return { data: null, error: { message: 'Password should be at least 8 characters' } };
+                const u = DB.auth_users.find(x => x.id === me().id);
+                if (u) { u.password = password; persist(); }
+            }
+            return { data: { user: userObj() }, error: null };
+        }
     };
 
     window.PMOffline = {
         createClient: () => ({ from: t => new Query(t), rpc, auth, storage: { from: storageBucket } }),
-        users: USERS.map(u => ({ ...u })),
-        current: () => ({ ...me() }),
+        // 切換清單：所有帳號（顯示名稱＋帳號＋權限）
+        listUsers: () => DB.auth_users.map(u => {
+            const m = DB.app_members.find(x => x.email === u.email) || {};
+            const uname = u.email.split('@')[0];
+            return { id: u.id, email: u.email, username: uname, role: m.role || null,
+                name: `${m.display_name || uname}（${uname}｜${m.role === 'admin' ? '管理員' : m.role === 'viewer' ? '唯讀' : m.role === 'editor' ? '編輯者' : '未開通'}${u.note ? '｜' + u.note : ''}）` };
+        }),
+        current: () => { const l = window.PMOffline.listUsers().find(x => x.id === me().id) || {}; return { ...me(), ...l }; },
         // 切換測試身分（seeding 時暫時切換，不寫入 localStorage）
         setUser: (email, remember = true) => {
-            const u = USERS.find(x => x.email === email);
+            const u = DB.auth_users.find(x => x.email === email);
             if (!u) return;
             current = u;
             if (remember) { try { localStorage.setItem(USER_KEY, email); } catch (e) {} }
         },
         reset: () => {
-            try { [DB_KEY, IMG_KEY, 'pm_offline_seeded_v4'].forEach(k => localStorage.removeItem(k)); } catch (e) {}
+            try { [DB_KEY, IMG_KEY, 'pm_offline_seeded_v41', USER_KEY].forEach(k => localStorage.removeItem(k)); } catch (e) {}
             DB = freshDb();
+            current = DB.auth_users[0];
         },
         usageKB: () => {
             try { return Math.round(((localStorage.getItem(DB_KEY) || '').length + (localStorage.getItem(IMG_KEY) || '').length) * 2 / 1024); } catch (e) { return 0; }

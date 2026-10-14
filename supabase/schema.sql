@@ -1,5 +1,5 @@
 -- =====================================================================
---  專案管理系統 v4 — Supabase 資料庫結構（個人專案＋分享）
+--  專案管理系統 v4.1 — Supabase 資料庫結構（個人專案＋分享＋帳號密碼登入）
 --  使用方式：Supabase 後台 → SQL Editor → New query → 貼上全部 → Run
 --  可重複執行（已存在的物件會略過或覆蓋）
 -- =====================================================================
@@ -238,6 +238,8 @@ end $$;
 create or replace function public.keep_owner() returns trigger
 language plpgsql as $$
 begin
+  -- 只有「刪除使用者並移轉專案」的系統函式可以變更擁有者
+  if coalesce(current_setting('pm.allow_owner_change', true), '') = 'on' then return new; end if;
   if old.owner_id is not null then new.owner_id := old.owner_id; end if;
   new.owner_email := coalesce(old.owner_email, new.owner_email);
   return new;
@@ -582,11 +584,8 @@ insert into public.app_settings (key, value) values
 on conflict (key) do nothing;
 
 -- ---------------------------------------------------------------------
--- 11. ★ 第一位管理員：把下面的 Email 改成你的登入 Email 後執行
+-- 11. ★ 第一位管理員：見檔案最後的「13.」，把帳號、密碼改成你要的再執行
 -- ---------------------------------------------------------------------
--- insert into public.app_members (email, role, display_name)
--- values (lower('your-email@company.com'), 'admin', '系統管理員')
--- on conflict (email) do update set role = 'admin';
 
 -- ---------------------------------------------------------------------
 -- 12. v3 → v4 既有資料移轉（可重複執行；全新安裝時不會有任何影響）
@@ -609,3 +608,123 @@ with first_admin as (
   where m.role = 'admin' order by m.created_at limit 1
 )
 update public.requirements r set owner_id = fa.id, owner_email = fa.email from first_admin fa where r.owner_id is null;
+
+-- ---------------------------------------------------------------------
+-- 13. v4.1 帳號＋密碼登入（不需要真實 Email）
+--     • 每個帳號在 Supabase Auth 內部對應一個「帳號@pm.local」的虛擬 Email（不會寄任何信）
+--     • 管理員在網站「系統設定 → 帳號與權限」建立帳號、重設密碼、刪除帳號
+--     • 第一位管理員：在 SQL Editor 執行（帳號、密碼、名稱改成你的）：
+--         select public.pm_create_user('admin', '請改成至少8碼的密碼', 'admin', '系統管理員');
+-- ---------------------------------------------------------------------
+create extension if not exists pgcrypto with schema extensions;
+
+create or replace function public.pm_login_domain() returns text
+language sql immutable as $$ select 'pm.local' $$;
+
+-- 只有管理員（或在 SQL Editor 以資料庫擁有者身分）可以管理帳號
+create or replace function public.pm_assert_admin() returns void
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if public.is_admin() then return; end if;
+  -- SQL Editor（未登入、以資料庫擁有者連線）可用來建立第一位管理員
+  if auth.uid() is null and session_user in ('postgres', 'supabase_admin') then return; end if;
+  raise exception '權限不足：只有管理員可以管理帳號' using errcode = '42501';
+end $$;
+
+create or replace function public.pm_username_email(p_username text) returns text
+language plpgsql immutable as $$
+declare u text := lower(trim(coalesce(p_username, '')));
+begin
+  if u !~ '^[a-z0-9][a-z0-9._-]{2,31}$' then
+    raise exception '帳號格式不符：3～32 個英文小寫、數字或 . _ -，且須以英數字開頭' using errcode = '22023';
+  end if;
+  return u || '@' || public.pm_login_domain();
+end $$;
+
+-- 建立帳號（並加入成員名單）
+create or replace function public.pm_create_user(p_username text, p_password text, p_role text default 'editor', p_display_name text default null)
+returns uuid
+language plpgsql security definer set search_path = public, extensions, auth as $$
+declare
+  v_email text := public.pm_username_email(p_username);
+  v_uid   uuid := gen_random_uuid();
+begin
+  perform public.pm_assert_admin();
+  if coalesce(length(p_password), 0) < 8 then raise exception '密碼至少 8 碼' using errcode = '22023'; end if;
+  if p_role not in ('admin', 'editor', 'viewer') then raise exception '權限只能是 admin / editor / viewer' using errcode = '22023'; end if;
+  if exists (select 1 from auth.users where lower(email) = v_email) then
+    raise exception '帳號「%」已存在', lower(trim(p_username)) using errcode = '23505';
+  end if;
+
+  insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
+                          raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
+                          confirmation_token, recovery_token, email_change, email_change_token_new)
+  values ('00000000-0000-0000-0000-000000000000', v_uid, 'authenticated', 'authenticated', v_email,
+          crypt(p_password, gen_salt('bf')), now(),
+          '{"provider":"email","providers":["email"]}'::jsonb,
+          jsonb_build_object('username', lower(trim(p_username)), 'display_name', p_display_name),
+          now(), now(), '', '', '', '');
+
+  insert into auth.identities (id, user_id, provider_id, provider, identity_data, last_sign_in_at, created_at, updated_at)
+  values (gen_random_uuid(), v_uid, v_uid::text, 'email',
+          jsonb_build_object('sub', v_uid::text, 'email', v_email, 'email_verified', true, 'phone_verified', false),
+          now(), now(), now());
+
+  insert into public.app_members (email, role, display_name)
+  values (v_email, p_role, nullif(trim(coalesce(p_display_name, '')), ''))
+  on conflict (email) do update set role = excluded.role, display_name = excluded.display_name;
+
+  return v_uid;
+end $$;
+
+-- 重設密碼（管理員替別人重設）
+create or replace function public.pm_set_password(p_username text, p_password text)
+returns void
+language plpgsql security definer set search_path = public, extensions, auth as $$
+declare v_email text := public.pm_username_email(p_username);
+begin
+  perform public.pm_assert_admin();
+  if coalesce(length(p_password), 0) < 8 then raise exception '密碼至少 8 碼' using errcode = '22023'; end if;
+  update auth.users set encrypted_password = crypt(p_password, gen_salt('bf')), updated_at = now()
+   where lower(email) = v_email;
+  if not found then raise exception '找不到帳號「%」', lower(trim(p_username)) using errcode = 'P0002'; end if;
+end $$;
+
+-- 刪除帳號；可把他擁有的專案與需求移轉給另一個帳號（不移轉則只有管理員看得到、無人能改）
+create or replace function public.pm_delete_user(p_username text, p_transfer_to text default null)
+returns void
+language plpgsql security definer set search_path = public, auth as $$
+declare
+  v_email text := public.pm_username_email(p_username);
+  v_uid uuid;
+  t_email text;
+  t_uid uuid;
+begin
+  perform public.pm_assert_admin();
+  if v_email = public.my_email() then raise exception '不能刪除自己的帳號' using errcode = '22023'; end if;
+  select id into v_uid from auth.users where lower(email) = v_email;
+  if exists (select 1 from public.app_members where email = v_email and role = 'admin')
+     and (select count(*) from public.app_members where role = 'admin') <= 1 then
+    raise exception '不能刪除最後一位管理員' using errcode = '22023';
+  end if;
+  if nullif(trim(coalesce(p_transfer_to, '')), '') is not null and v_uid is not null then
+    t_email := public.pm_username_email(p_transfer_to);
+    select id into t_uid from auth.users where lower(email) = t_email;
+    if t_uid is null then raise exception '找不到要移轉的帳號「%」', p_transfer_to using errcode = 'P0002'; end if;
+    perform set_config('pm.allow_owner_change', 'on', true);
+    update public.projects     set owner_id = t_uid, owner_email = t_email where owner_id = v_uid;
+    update public.requirements set owner_id = t_uid, owner_email = t_email where owner_id = v_uid;
+    perform set_config('pm.allow_owner_change', 'off', true);
+    delete from public.project_shares s using public.projects p where s.project_id = p.id and p.owner_id = t_uid and s.email = t_email;
+    delete from public.requirement_shares s using public.requirements r where s.requirement_id = r.id and r.owner_id = t_uid and s.email = t_email;
+  end if;
+  delete from public.project_shares where email = v_email;
+  delete from public.requirement_shares where email = v_email;
+  delete from public.app_members where email = v_email;
+  if v_uid is not null then delete from auth.users where id = v_uid; end if;
+end $$;
+
+revoke all on function public.pm_create_user(text, text, text, text), public.pm_set_password(text, text),
+                       public.pm_delete_user(text, text), public.pm_assert_admin() from public, anon;
+grant execute on function public.pm_create_user(text, text, text, text), public.pm_set_password(text, text),
+                          public.pm_delete_user(text, text), public.pm_login_domain(), public.pm_username_email(text) to authenticated;

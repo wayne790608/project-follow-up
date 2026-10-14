@@ -55,6 +55,10 @@
         .member-table td { padding: 10px 12px; border-bottom: 1px solid #edf2f7; }
         .import-log { background: #1a202c; color: #c6f6d5; font-family: ui-monospace, Menlo, monospace; font-size: 12px; padding: 12px; border-radius: 6px; max-height: 220px; overflow: auto; white-space: pre-wrap; display: none; margin-top: 12px; }
         .info-box { background: #ebf8ff; border: 1px solid #bee3f8; color: #2a4365; padding: 12px 14px; border-radius: 8px; font-size: 13px; line-height: 1.6; }
+        .user-form { display: grid; grid-template-columns: 1fr 1.3fr 1.3fr 0.9fr auto; gap: 12px; align-items: start; max-width: 980px; }
+        .name-input { border: 1px solid transparent; background: transparent; padding: 5px 6px; border-radius: 4px; font-size: 13px; width: 100%; font-family: inherit; }
+        .name-input:hover, .name-input:focus { border-color: #cbd5e0; background: #fff; }
+        @media (max-width: 900px) { .user-form { grid-template-columns: 1fr 1fr; } }
     </style>
 </head>
 <body>
@@ -68,7 +72,7 @@
             <button class="tab-btn" data-tab="tab-rules">🔔 預警規則</button>
             <button class="tab-btn" data-tab="tab-reports">📊 報表中心</button>
             <button class="tab-btn edit-only" data-tab="tab-backup">💾 備份與匯入</button>
-            <button class="tab-btn" data-tab="tab-members" id="tabMembersBtn" style="display:none">🔐 成員與權限</button>
+            <button class="tab-btn" data-tab="tab-members" id="tabMembersBtn" style="display:none">🔐 帳號與權限</button>
         </div>
 
         <!-- 分頁 1：參數字典 -->
@@ -167,20 +171,26 @@
             </div>
         </div>
 
-        <!-- 分頁 5：成員與權限（僅管理員） -->
+        <!-- 分頁 5：帳號與權限（僅管理員） -->
         <div class="tab-content" id="tab-members">
             <div class="settings-card">
-                <div class="card-title">🔐 系統成員與權限</div>
-                <div class="card-desc">只有在此名單內的 Email 登入後才能看到資料。新同事流程：① 在此新增 Email 與權限 → ② 請對方打開網站，在登入頁點「首次使用註冊」並完成 Email 驗證。<br>
-                    權限：<b>管理員</b> 可管理成員與清空資料；<b>編輯者</b> 可新增／修改所有資料；<b>唯讀</b> 只能瀏覽與匯出報表。</div>
-                <div class="form-grid-2" style="max-width:720px;grid-template-columns:2fr 1.2fr 1.2fr auto;align-items:end;">
-                    <div class="form-group" style="margin:0"><label>Email</label><input type="email" id="memEmail" placeholder="name@company.com"></div>
-                    <div class="form-group" style="margin:0"><label>顯示名稱</label><input type="text" id="memName" placeholder="選填"></div>
-                    <div class="form-group" style="margin:0"><label>權限</label><select id="memRole"><option value="editor">編輯者</option><option value="viewer">唯讀</option><option value="admin">管理員</option></select></div>
-                    <button class="btn btn-primary" onclick="addMember()">＋ 新增／更新</button>
+                <div class="card-title">➕ 建立帳號</div>
+                <div class="card-desc">登入只需要「帳號＋密碼」，不需要 Email。建立後把帳號與初始密碼交給同事，對方登入後可在左下角「🔑 修改密碼」自行更改。<br>
+                    權限：<b>管理員</b> 可管理帳號、查看所有人的專案（只能新增追蹤）；<b>編輯者</b> 可建立自己的專案與需求、在被分享的專案新增追蹤；<b>唯讀</b> 只能瀏覽被分享的資料。</div>
+                <div class="user-form">
+                    <div class="form-group"><label>帳號 <span class="req">*</span></label><input type="text" id="newUsername" placeholder="例如 sam、wang.dm" autocapitalize="off" spellcheck="false" maxlength="32"></div>
+                    <div class="form-group"><label>顯示名稱</label><input type="text" id="newDisplayName" placeholder="例如 王小明（倉庫主管）" maxlength="40"></div>
+                    <div class="form-group"><label>初始密碼 <span class="req">*</span></label>
+                        <div style="display:flex;gap:6px"><input type="text" id="newPassword" placeholder="至少 8 碼" autocomplete="off" style="flex:1"><button type="button" class="btn-action" onclick="genPassword()" title="產生隨機密碼">🎲</button></div></div>
+                    <div class="form-group"><label>權限</label><select id="newRole"><option value="editor">編輯者</option><option value="viewer">唯讀</option><option value="admin">管理員</option></select></div>
+                    <button class="btn btn-primary" onclick="createUser()" style="align-self:end;margin-bottom:12px">＋ 建立帳號</button>
                 </div>
-                <div class="table-scroll" style="margin-top:18px;">
-                    <table class="member-table"><thead><tr><th>Email</th><th>顯示名稱</th><th>權限</th><th>加入時間</th><th></th></tr></thead><tbody id="memberBody"></tbody></table>
+                <div class="muted">帳號限 3～32 個英文小寫、數字或 . _ -，建立後不能改名（顯示名稱可隨時修改）。</div>
+            </div>
+            <div class="settings-card">
+                <div class="card-title">👥 帳號清單</div>
+                <div class="table-scroll">
+                    <table class="member-table"><thead><tr><th>帳號</th><th>顯示名稱</th><th>權限</th><th>建立時間</th><th style="width:220px"></th></tr></thead><tbody id="memberBody"></tbody></table>
                 </div>
             </div>
         </div>
@@ -405,37 +415,81 @@
         renderDictTags(); renderStats();
     }
 
-    /* ---------- 成員管理 ---------- */
+    /* ---------- 帳號與權限（僅管理員） ---------- */
+    let memberCache = [];
     async function renderMembers() {
         const body = document.getElementById('memberBody');
         body.innerHTML = '<tr><td colspan="5" class="muted">載入中…</td></tr>';
         try {
-            const list = await PM.api.listMembers();
-            body.innerHTML = list.map(m => `<tr>
-                <td>${esc(m.email)}${m.email === PM.user.email.toLowerCase() ? ' <span class="muted">(你)</span>' : ''}</td>
-                <td>${esc(m.display_name || '-')}</td>
-                <td><select class="filter-select" data-email="${esc(m.email)}" ${m.email === PM.user.email.toLowerCase() ? 'disabled' : ''}>
+            memberCache = await PM.api.listMembers();
+            const me = PM.user.email.toLowerCase();
+            body.innerHTML = memberCache.map(m => {
+                const u = PM.usernameOf(m.email), self = m.email === me;
+                return `<tr>
+                <td><b class="mono">${esc(u)}</b>${self ? ' <span class="muted">(你)</span>' : ''}</td>
+                <td><input type="text" class="name-input" data-email="${esc(m.email)}" value="${esc(m.display_name || '')}" placeholder="（未填）" maxlength="40"></td>
+                <td><select class="filter-select" data-email="${esc(m.email)}" ${self ? 'disabled title="不能變更自己的權限"' : ''}>
                     ${['admin', 'editor', 'viewer'].map(r => `<option value="${r}" ${r === m.role ? 'selected' : ''}>${PM.ROLE_NAMES[r]}</option>`).join('')}</select></td>
                 <td class="muted">${esc((m.created_at || '').slice(0, 10))}</td>
-                <td>${m.email === PM.user.email.toLowerCase() ? '' : `<button class="btn-action del" data-del="${esc(m.email)}">移除</button>`}</td>
-            </tr>`).join('');
-            body.querySelectorAll('select[data-email]').forEach(s => s.onchange = async () => {
-                const m = list.find(x => x.email === s.dataset.email);
-                await PM.act(() => PM.api.saveMember(Object.assign({}, m, { role: s.value })), '權限已更新');
+                <td><button class="btn-action" data-pwd="${esc(u)}">重設密碼</button>${self ? '' : `<button class="btn-action del" data-del="${esc(u)}">刪除帳號</button>`}</td>
+            </tr>`; }).join('');
+            body.querySelectorAll('select[data-email]').forEach(sel => sel.onchange = async () => {
+                const m = memberCache.find(x => x.email === sel.dataset.email);
+                await PM.act(() => PM.api.saveMember(Object.assign({}, m, { role: sel.value })), '權限已更新');
                 renderMembers();
             });
-            body.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
-                if (!confirm(`確定移除成員 ${b.dataset.del}？對方將無法再看到任何資料。`)) return;
-                await PM.act(() => PM.api.deleteMember(b.dataset.del), '已移除');
-                renderMembers();
+            body.querySelectorAll('.name-input').forEach(inp => inp.onchange = async () => {
+                const m = memberCache.find(x => x.email === inp.dataset.email);
+                await PM.act(() => PM.api.saveMember(Object.assign({}, m, { display_name: inp.value.trim() })), '顯示名稱已更新');
             });
+            body.querySelectorAll('[data-pwd]').forEach(b => b.onclick = () => resetPassword(b.dataset.pwd));
+            body.querySelectorAll('[data-del]').forEach(b => b.onclick = () => deleteUserAccount(b.dataset.del));
         } catch (e) { body.innerHTML = `<tr><td colspan="5" class="warn-text">${esc(PM.errMsg(e))}</td></tr>`; }
     }
-    async function addMember() {
-        const email = document.getElementById('memEmail').value.trim().toLowerCase();
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { alert('請輸入正確的 Email'); return; }
-        const ok = await PM.act(() => PM.api.saveMember({ email, role: document.getElementById('memRole').value, display_name: document.getElementById('memName').value.trim() }), '成員已儲存');
-        if (ok) { document.getElementById('memEmail').value = ''; document.getElementById('memName').value = ''; renderMembers(); }
+
+    function genPassword() {
+        const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        const arr = new Uint32Array(10);
+        crypto.getRandomValues(arr);
+        document.getElementById('newPassword').value = Array.from(arr, n => chars[n % chars.length]).join('');
+    }
+
+    async function createUser() {
+        const username = document.getElementById('newUsername').value.trim().toLowerCase();
+        const password = document.getElementById('newPassword').value;
+        const name = document.getElementById('newDisplayName').value.trim();
+        const role = document.getElementById('newRole').value;
+        if (!PM.USERNAME_RE.test(username)) { alert('帳號格式不符：3～32 個英文小寫、數字或 . _ -，且須以英數字開頭'); return; }
+        if (password.length < 8) { alert('初始密碼至少 8 碼'); return; }
+        const ok = await PM.act(() => PM.api.createUser(username, password, role, name), `已建立帳號「${username}」`);
+        if (!ok) return;
+        alert(`帳號已建立，請把以下資訊交給同事：\n\n網址：${location.href.replace(/[^/]*$/, '')}\n帳號：${username}\n初始密碼：${password}\n\n對方登入後可在左下角「🔑 修改密碼」自行更改。`);
+        ['newUsername', 'newPassword', 'newDisplayName'].forEach(id => document.getElementById(id).value = '');
+        renderMembers();
+    }
+
+    async function resetPassword(username) {
+        const pwd = prompt(`為「${username}」設定新密碼（至少 8 碼）：`);
+        if (pwd === null) return;
+        if (pwd.length < 8) { alert('密碼至少 8 碼'); return; }
+        if (await PM.act(() => PM.api.setUserPassword(username, pwd), `已重設「${username}」的密碼`))
+            alert(`請通知「${username}」用新密碼登入：\n\n${pwd}`);
+    }
+
+    async function deleteUserAccount(username) {
+        const email = PM.toLoginEmail(username);
+        const owned = PM.getProjects().filter(p => p.ownerEmail === email).length + PM.getRequirements().filter(r => r.ownerEmail === email).length;
+        const others = memberCache.map(m => PM.usernameOf(m.email)).filter(u => u !== username);
+        let transfer = '';
+        if (owned) {
+            transfer = prompt(`「${username}」擁有 ${owned} 筆專案／需求。\n請輸入要接手的帳號（可用：${others.join('、')}）；\n留空則不移轉（資料保留，但只有管理員看得到、無人能修改）：`, '');
+            if (transfer === null) return;
+            transfer = transfer.trim().toLowerCase();
+            if (transfer && !others.includes(transfer)) { alert(`找不到帳號「${transfer}」`); return; }
+        }
+        if (!confirm(`確定刪除帳號「${username}」？${transfer ? `\n其專案與需求將移轉給「${transfer}」。` : ''}\n對方將無法再登入，此操作無法復原。`)) return;
+        await PM.act(() => PM.api.deleteUser(username, transfer), `已刪除帳號「${username}」`);
+        renderMembers();
     }
 
     PM.boot('settings', () => {
