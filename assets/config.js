@@ -11,9 +11,9 @@
 window.PM_CONFIG = {
     // ★ 離線測試模式：true = 資料存在本機瀏覽器，不需要 Supabase，直接雙擊 index.html 就能確認功能
     //                  false = 正式上線，連到下面的 Supabase 雲端資料庫
-    OFFLINE: true,
+    OFFLINE: false,
 
-    SUPABASE_URL: 'https://YOUR-PROJECT-ID.supabase.co',
-    SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_YOUR-KEY',
+    SUPABASE_URL: 'https://ufwsnuzhwnhuseyazbrs.supabase.co',
+    SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_8taHHL3QZ8kOZormTUcrKQ_CkwD1yxF',
     IMAGE_BUCKET: 'project-images'
 };
